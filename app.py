@@ -13,9 +13,11 @@ from flask import Flask, jsonify, render_template, request, send_file
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "analytics.db"
-DOWNLOAD_ROOT = BASE_DIR / "downloads"
-DOWNLOAD_ROOT.mkdir(exist_ok=True)
+import tempfile
+from pathlib import Path
 
+DOWNLOAD_ROOT = Path(tempfile.gettempdir()) / "downloads"
+DOWNLOAD_ROOT.mkdir(exist_ok=True)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-this-secret-key")
 
