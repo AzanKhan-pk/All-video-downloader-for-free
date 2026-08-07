@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import yt_dlp
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, render_template, request, send_file
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "analytics.db"
@@ -406,7 +406,12 @@ def admin():
 
 init_db()
 
-
+@app.route('/googledd736139896dc604.html')
+def google_verification():
+    return send_from_directory(
+        app.root_path,
+        'googledd736139896dc604.html'
+    )
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
