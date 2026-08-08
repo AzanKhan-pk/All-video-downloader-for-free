@@ -18,6 +18,9 @@ from pathlib import Path
 DOWNLOAD_ROOT = Path(tempfile.gettempdir()) / "downloads"
 DOWNLOAD_ROOT.mkdir(exist_ok=True)
 app = Flask(__name__)
+@app.route("/googledd736139896dc604.html")
+def google_verification():
+    return "google-site-verification: googledd736139896dc604.html"
 # Railway deployment fix: send_file import
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-this-secret-key")
 
