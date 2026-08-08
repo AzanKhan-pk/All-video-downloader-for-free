@@ -166,8 +166,12 @@ def yt_options():
         "noplaylist": True,
         "restrictfilenames": True,
         "geo_bypass": False,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"]
+            }
+        },
     }
-
 
 def safe_title(value):
     value = re.sub(r"[^a-zA-Z0-9 _.-]", "", value or "video")
