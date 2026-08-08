@@ -9,8 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import yt_dlp
-from flask import Flask, render_template, request, send_from_directory
-
+from flask import Flask, render_template, request, send_from_directory, jsonify
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "analytics.db"
 import tempfile
@@ -273,113 +272,51 @@ def api_download():
         options = yt_options()
         options["outtmpl"] = output_template
 
-        # -------------------------
-        # AUDIO DOWNLOAD
-        # -------------------------
         if mode == "audio":
-
             options.update({
                 "format": "bestaudio/best",
-
-                "postprocessors": [
-                    {
-                        "key": "FFmpegExtractAudio",
-                        "preferredcodec": "mp3",
-                        "preferredquality": "192",
-                    }
-                ],
-
-                "postprocessor_args": [
-                    "-vn",
-                    "-ar", "44100",
-                    "-ac", "2",
-                ],
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }],
             })
 
             file_type = "MP3"
 
-        # -------------------------
-        # VIDEO + AUDIO DOWNLOAD
-        # -------------------------
         else:
+            options["format"] = (
+                f"bestvideo[height<={height}][ext=mp4]+"
+                f"bestaudio[ext=m4a]/"
+                f"best[height<={height}][ext=mp4]/"
+                f"best[height<={height}]/best"
+            )
 
-            options.update({
-
-                # First preference:
-                # MP4 video + M4A audio
-                #
-                # Second preference:
-                # Any compatible video + audio
-                #
-                # Final fallback:
-                # Single-file MP4
-                "format": (
-                    f"bestvideo[height<={height}]"
-                    "[ext=mp4]+"
-                    "bestaudio[ext=m4a]/"
-
-                    f"bestvideo[height<={height}]"
-                    "+bestaudio/"
-
-                    f"best[height<={height}]"
-                    "[ext=mp4]/"
-
-                    "best"
-                ),
-
-                # IMPORTANT:
-                # Merge video + audio into MP4
-                "merge_output_format": "mp4",
-
-                # Keep the original streams unless merging
-                # requires processing.
-                "keepvideo": False,
-            })
+            options["merge_output_format"] = "mp4"
 
             file_type = "MP4"
 
-        # -------------------------
-        # DOWNLOAD
-        # -------------------------
-
         with yt_dlp.YoutubeDL(options) as ydl:
-
-            info = ydl.extract_info(
-                url,
-                download=True
-            )
+            info = ydl.extract_info(url, download=True)
 
             prepared_file = Path(
                 ydl.prepare_filename(info)
             )
 
-        # -------------------------
-        # FIND FINAL FILE
-        # -------------------------
-
+        # Find the actual downloaded file.
         if mode == "audio":
-
             downloaded = prepared_file.with_suffix(".mp3")
-
         else:
+            downloaded = prepared_file
 
-            # Usually yt-dlp/FFmpeg creates this
-            downloaded = prepared_file.with_suffix(".mp4")
-
-            # If that exact file doesn't exist,
-            # search the temporary folder.
             if not downloaded.exists():
-
-                mp4_files = list(
-                    temp_dir.glob("*.mp4")
-                )
+                mp4_files = list(temp_dir.glob("*.mp4"))
 
                 if mp4_files:
                     downloaded = mp4_files[0]
 
         # Final fallback
         if not downloaded.exists():
-
             files = [
                 f for f in temp_dir.iterdir()
                 if f.is_file()
@@ -392,16 +329,12 @@ def api_download():
 
             downloaded = files[0]
 
-        # -------------------------
-        # DATABASE
-        # -------------------------
-
-        title = info.get("title") or "Untitled video"
+        title = info.get("title") or "video"
         platform = platform_for(url)
         timestamp = now_iso()
 
+        # Save download information
         with get_db() as connection:
-
             connection.execute(
                 """
                 INSERT INTO downloads(
@@ -424,10 +357,6 @@ def api_download():
                 ),
             )
 
-        # -------------------------
-        # NOTIFICATION
-        # -------------------------
-
         send_notification(
             "ALL VIDEO DOWNLOADER: download",
             (
@@ -439,10 +368,7 @@ def api_download():
             ),
         )
 
-        # -------------------------
-        # SAFE FILE NAME
-        # -------------------------
-
+        # Safe filename for Android, iPhone and PC
         extension = downloaded.suffix.lower()
 
         safe_name = safe_title(title)
@@ -452,18 +378,18 @@ def api_download():
 
         filename = f"{safe_name}{extension}"
 
-        # -------------------------
-        # SEND FILE
-        # -------------------------
-
+        # Send the file to the browser
         response = send_file(
             downloaded,
             as_attachment=True,
             download_name=filename,
-            mimetype="video/mp4"
-            if extension == ".mp4"
-            else "audio/mpeg",
+            mimetype="application/octet-stream",
             max_age=0,
+        )
+
+        # Helpful headers for mobile browsers
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="{filename}"'
         )
 
         response.headers["Cache-Control"] = (
@@ -472,12 +398,9 @@ def api_download():
 
         response.headers["Pragma"] = "no-cache"
 
-        response.headers["X-Content-Type-Options"] = "nosniff"
-
         return response
 
     except Exception as error:
-
         app.logger.exception(
             "Download error: %s",
             error
@@ -486,8 +409,8 @@ def api_download():
         return jsonify({
             "ok": False,
             "error": (
-                "Download failed. The media may not be public, "
-                "or FFmpeg may be unavailable on the server."
+                "Download failed. Make sure the URL is public "
+                "and the selected quality is available."
             )
         }), 400
 
