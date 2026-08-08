@@ -202,27 +202,31 @@ async function downloadMedia() {
       );
     }
 
-    const fileBlob = await response.blob();
-    const temporaryUrl = URL.createObjectURL(fileBlob);
-    const downloadLink = document.createElement("a");
+const fileBlob = await response.blob();
 
-    const safeFileName = currentVideo.title
-      .replace(/[^\w\s.-]/g, "")
-      .trim()
-      .slice(0, 90) || "video";
+const temporaryUrl = URL.createObjectURL(fileBlob);
+const downloadLink = document.createElement("a");
 
-    const fileExtension =
-      selectedMode === "audio" ? "mp3" : "mp4";
+const safeFileName = currentVideo.title
+  .replace(/[^\w\s.-]/g, "")
+  .trim()
+  .slice(0, 90) || "video";
 
-    downloadLink.href = temporaryUrl;
-    downloadLink.download = `${safeFileName}.${fileExtension}`;
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    downloadLink.remove();
+const fileExtension =
+  selectedMode === "audio" ? "mp3" : "mp4";
 
-    URL.revokeObjectURL(temporaryUrl);
+downloadLink.href = temporaryUrl;
+downloadLink.download = `${safeFileName}.${fileExtension}`;
 
-    setStatus("Your download is ready.", "success");
+document.body.appendChild(downloadLink);
+downloadLink.click();
+downloadLink.remove();
+
+setStatus("Download started.", "success");
+
+setTimeout(() => {
+  URL.revokeObjectURL(temporaryUrl);
+}, 1000);
   } catch (error) {
     setStatus(
       error.message || "Download failed.",
