@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import yt_dlp
-from flask import Flask, render_template, request, send_file
+from flask import Flask, render_template, request, send_from_directory
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "analytics.db"
@@ -191,10 +191,14 @@ def api_info():
         payload = request.get_json(silent=True) or {}
         url = clean_url(payload.get("url", ""))
 
+        if not url:
+            raise ValueError("Please enter a valid URL.")
+
         with yt_dlp.YoutubeDL(yt_options()) as ydl:
             info = ydl.extract_info(url, download=False)
 
         duration = info.get("duration")
+
         if info.get("duration_string"):
             duration_text = info["duration_string"]
         elif duration:
@@ -203,38 +207,40 @@ def api_info():
         else:
             duration_text = "Unknown"
 
-        return jsonify(
-            {
-                "ok": True,
-                "video": {
-                    "id": info.get("id"),
-                    "title": info.get("title") or "Untitled video",
-                    "creator": info.get("uploader")
-                    or info.get("channel")
-                    or "Unknown creator",
-                    "duration": duration_text,
-                    "views": (
-                        f"{info.get('view_count'):,}"
-                        if info.get("view_count")
-                        else "Not available"
-                    ),
-                    "thumbnail": info.get("thumbnail"),
-                    "platform": platform_for(url),
-                    "url": url,
-                },
-            }
-        )
-    except Exception:
-        return jsonify(
-            {
-                "ok": False,
-                "error": (
-                    "Could not read this link. Private, login-required, or "
-                    "restricted media is not supported."
-                ),
-            }
-        ), 400
+        view_count = info.get("view_count")
 
+        return jsonify({
+            "ok": True,
+            "video": {
+                "id": info.get("id"),
+                "title": info.get("title") or "Untitled video",
+                "creator": (
+                    info.get("uploader")
+                    or info.get("channel")
+                    or "Unknown creator"
+                ),
+                "duration": duration_text,
+                "views": (
+                    f"{view_count:,}"
+                    if view_count is not None
+                    else "Not available"
+                ),
+                "thumbnail": info.get("thumbnail"),
+                "platform": platform_for(url),
+                "url": url,
+            }
+        })
+
+    except Exception as error:
+        app.logger.warning("Info error: %s", error)
+
+        return jsonify({
+            "ok": False,
+            "error": (
+                "Could not read this link. Make sure the media is public "
+                "and the URL is correct."
+            )
+        }), 400
 
 @app.post("/api/download")
 def api_download():
@@ -245,63 +251,182 @@ def api_download():
         mode = payload.get("mode", "video")
         quality = payload.get("quality", "720p")
 
+        if not url:
+            raise ValueError("Please enter a valid URL.")
+
         if mode not in {"video", "audio"}:
             raise ValueError("Unsupported media type.")
 
         height = QUALITY_HEIGHTS.get(quality, 720)
-        temp_dir = Path(tempfile.mkdtemp(prefix="avd_", dir=DOWNLOAD_ROOT))
-        output_template = str(temp_dir / "%(title)s.%(ext)s")
+
+        temp_dir = Path(
+            tempfile.mkdtemp(
+                prefix="avd_",
+                dir=DOWNLOAD_ROOT
+            )
+        )
+
+        output_template = str(
+            temp_dir / "%(title)s.%(ext)s"
+        )
+
         options = yt_options()
         options["outtmpl"] = output_template
 
+        # -------------------------
+        # AUDIO DOWNLOAD
+        # -------------------------
         if mode == "audio":
-            options.update(
-                {
-                    "format": "bestaudio/best",
-                    "postprocessors": [
-                        {
-                            "key": "FFmpegExtractAudio",
-                            "preferredcodec": "mp3",
-                            "preferredquality": "192",
-                        }
-                    ],
-                }
-            )
+
+            options.update({
+                "format": "bestaudio/best",
+
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ],
+
+                "postprocessor_args": [
+                    "-vn",
+                    "-ar", "44100",
+                    "-ac", "2",
+                ],
+            })
+
             file_type = "MP3"
+
+        # -------------------------
+        # VIDEO + AUDIO DOWNLOAD
+        # -------------------------
         else:
-            options["format"] = (
-                f"best[height<={height}][ext=mp4]/"
-                f"best[height<={height}]/best"
-            )
-            options["merge_output_format"] = "mp4"
+
+            options.update({
+
+                # First preference:
+                # MP4 video + M4A audio
+                #
+                # Second preference:
+                # Any compatible video + audio
+                #
+                # Final fallback:
+                # Single-file MP4
+                "format": (
+                    f"bestvideo[height<={height}]"
+                    "[ext=mp4]+"
+                    "bestaudio[ext=m4a]/"
+
+                    f"bestvideo[height<={height}]"
+                    "+bestaudio/"
+
+                    f"best[height<={height}]"
+                    "[ext=mp4]/"
+
+                    "best"
+                ),
+
+                # IMPORTANT:
+                # Merge video + audio into MP4
+                "merge_output_format": "mp4",
+
+                # Keep the original streams unless merging
+                # requires processing.
+                "keepvideo": False,
+            })
+
             file_type = "MP4"
 
+        # -------------------------
+        # DOWNLOAD
+        # -------------------------
+
         with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=True)
-            downloaded = Path(ydl.prepare_filename(info))
 
-            if mode == "audio":
-                downloaded = downloaded.with_suffix(".mp3")
+            info = ydl.extract_info(
+                url,
+                download=True
+            )
 
+            prepared_file = Path(
+                ydl.prepare_filename(info)
+            )
+
+        # -------------------------
+        # FIND FINAL FILE
+        # -------------------------
+
+        if mode == "audio":
+
+            downloaded = prepared_file.with_suffix(".mp3")
+
+        else:
+
+            # Usually yt-dlp/FFmpeg creates this
+            downloaded = prepared_file.with_suffix(".mp4")
+
+            # If that exact file doesn't exist,
+            # search the temporary folder.
             if not downloaded.exists():
-                candidates = list(temp_dir.iterdir())
-                if not candidates:
-                    raise RuntimeError("The downloaded file could not be found.")
-                downloaded = candidates[0]
+
+                mp4_files = list(
+                    temp_dir.glob("*.mp4")
+                )
+
+                if mp4_files:
+                    downloaded = mp4_files[0]
+
+        # Final fallback
+        if not downloaded.exists():
+
+            files = [
+                f for f in temp_dir.iterdir()
+                if f.is_file()
+            ]
+
+            if not files:
+                raise RuntimeError(
+                    "Downloaded file could not be found."
+                )
+
+            downloaded = files[0]
+
+        # -------------------------
+        # DATABASE
+        # -------------------------
 
         title = info.get("title") or "Untitled video"
         platform = platform_for(url)
         timestamp = now_iso()
 
         with get_db() as connection:
+
             connection.execute(
                 """
                 INSERT INTO downloads(
-                    title, platform, quality, file_type, source_url, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    title,
+                    platform,
+                    quality,
+                    file_type,
+                    source_url,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (title, platform, quality, file_type, url, timestamp),
+                (
+                    title,
+                    platform,
+                    quality,
+                    file_type,
+                    url,
+                    timestamp,
+                ),
             )
+
+        # -------------------------
+        # NOTIFICATION
+        # -------------------------
 
         send_notification(
             "ALL VIDEO DOWNLOADER: download",
@@ -314,25 +439,57 @@ def api_download():
             ),
         )
 
-        return send_file(
+        # -------------------------
+        # SAFE FILE NAME
+        # -------------------------
+
+        extension = downloaded.suffix.lower()
+
+        safe_name = safe_title(title)
+
+        if not safe_name:
+            safe_name = "AVD_Download"
+
+        filename = f"{safe_name}{extension}"
+
+        # -------------------------
+        # SEND FILE
+        # -------------------------
+
+        response = send_file(
             downloaded,
             as_attachment=True,
-            download_name=(
-                f"{safe_title(title)}.{downloaded.suffix.lstrip('.') }"
-            ),
+            download_name=filename,
+            mimetype="video/mp4"
+            if extension == ".mp4"
+            else "audio/mpeg",
+            max_age=0,
         )
-    except Exception as error:
-        app.logger.warning("Download error: %s", error)
-        return jsonify(
-            {
-                "ok": False,
-                "error": (
-                    "Download failed. Check the URL, make sure the content is "
-                    "public, and install FFmpeg for MP3 or high-quality merging."
-                ),
-            }
-        ), 400
 
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+
+        response.headers["Pragma"] = "no-cache"
+
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+        return response
+
+    except Exception as error:
+
+        app.logger.exception(
+            "Download error: %s",
+            error
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": (
+                "Download failed. The media may not be public, "
+                "or FFmpeg may be unavailable on the server."
+            )
+        }), 400
 
 @app.post("/api/comments")
 def api_comments():
