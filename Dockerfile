@@ -10,5 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8080} app:app"]
 # Enable FFmpeg for video and audio merging
+
+CMD ["sh", "-c", "gunicorn --timeout 300 --workers 1 --bind 0.0.0.0:${PORT:-8080} app:app"]
