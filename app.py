@@ -187,7 +187,7 @@ def index():
         )
 
     return render_template("index.html")
-google.com, pub-2404211463113597, DIRECT, f08c47fec0942fa0
+
 
 @app.post("/api/info")
 def api_info():
