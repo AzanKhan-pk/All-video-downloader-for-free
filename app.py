@@ -232,11 +232,11 @@ def api_info():
                     if view_count is not None
                     else "Not available"
                 ),
-            "thumbnail": info.get("thumbnail"),
-        "platform": platform_for(url),
-        "url": url,
-    }
-})
+                "thumbnail": info.get("thumbnail"),
+                "platform": platform_for(url),
+                "url": url,
+            }
+        })
 
     except Exception as error:
         app.logger.warning("Info error: %s", error)
@@ -308,6 +308,7 @@ def api_download():
 
         # VIDEO
         else:
+            # Get the available formats from the source
             with yt_dlp.YoutubeDL(yt_options()) as check_ydl:
                 info_check = check_ydl.extract_info(
                     url,
@@ -316,26 +317,69 @@ def api_download():
 
             formats = info_check.get("formats") or []
 
-            exact_video_formats = [
-                fmt
+            # Find the highest available video resolution
+            available_heights = sorted({
+                int(fmt.get("height"))
                 for fmt in formats
-                if fmt.get("height") == height
+                if fmt.get("height")
                 and fmt.get("vcodec") not in (None, "none")
-            ]
+            })
 
-            if not exact_video_formats:
+            if not available_heights:
+                raise ValueError(
+                    "No video quality is available for this video."
+                )
+
+            # If requested quality is higher than the source,
+            # do not upscale it.
+            if height > max(available_heights):
                 raise ValueError(
                     f"{quality} is not available for this video. "
                     "Please select another quality."
                 )
 
+            # Find the best source quality that is >= requested quality.
+            # This allows FFmpeg to create the requested lower resolution
+            # when the exact resolution does not exist.
+            source_heights = [
+                h for h in available_heights
+                if h >= height
+            ]
+
+            source_height = min(source_heights)
+
+            # Download the selected source quality with best audio.
             options["format"] = (
-                f"bestvideo[height={height}]+"
+                f"bestvideo[height={source_height}]+"
                 f"bestaudio/"
-                f"best[height={height}]"
+                f"best[height={source_height}]"
             )
 
             options["merge_output_format"] = "mp4"
+
+            # If the source resolution is higher than requested,
+            # FFmpeg will resize the video to the requested height.
+            if source_height > height:
+                options["postprocessors"] = [{
+                    "key": "FFmpegVideoConvertor",
+                    "preferedformat": "mp4",
+                }]
+
+                options["postprocessor_args"] = [
+                    "-vf",
+                    f"scale=-2:{height}",
+                    "-c:v",
+                    "libx264",
+                    "-crf",
+                    "23",
+                    "-preset",
+                    "medium",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "128k",
+                ]
+
             file_type = "MP4"
 
         # DOWNLOAD
