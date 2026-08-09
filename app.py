@@ -187,6 +187,17 @@ def index():
         )
 
     return render_template("index.html")
+    
+    @app.route("/sitemap.xml")
+def sitemap():
+    sitemap_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://avd.up.railway.app/</loc>
+    </url>
+</urlset>"""
+
+    return sitemap_xml, 200, {"Content-Type": "application/xml"}
 
 
 @app.post("/api/info")
