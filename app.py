@@ -539,7 +539,7 @@ def api_comments():
         )
 
     send_notification(
-        "ALL VIDEO DOWNLOADER: new comment",
+        "VidLoom VIDEO DOWNLOADER: new comment",
         f"User name: {name}\nComment: {comment}\nDate/time: {timestamp}",
     )
 
