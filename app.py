@@ -366,7 +366,7 @@ def api_download():
             )
 
         send_notification(
-            "ALL VIDEO DOWNLOADER: download",
+            "VIDLOOM: download",
             (
                 f"Video title: {title}\n"
                 f"Platform: {platform}\n"
@@ -382,7 +382,7 @@ def api_download():
         safe_name = safe_title(title)
 
         if not safe_name:
-            safe_name = "AVD_Download"
+            safe_name = "VidLoom_Download"
 
         filename = f"{safe_name}{extension}"
 
