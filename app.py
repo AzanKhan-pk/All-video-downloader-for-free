@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import yt_dlp
-
+from flask import Flask, render_template, request, send_from_directory, send_file, jsonify
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "analytics.db"
 import tempfile
@@ -18,16 +18,6 @@ from pathlib import Path
 DOWNLOAD_ROOT = Path(tempfile.gettempdir()) / "downloads"
 DOWNLOAD_ROOT.mkdir(exist_ok=True)
 app = Flask(__name__)
-@app.route("/")
-def index():
-    with get_db() as connection:
-        connection.execute(
-            "INSERT INTO visits(created_at) VALUES (?)",
-            (now_iso(),),
-        )
-
-    return render_template("index.html")
-    from flask import Flask, render_template, request, send_from_directory, send_file, jsonify
 # Railway deployment fix: send_file import
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-this-secret-key")
 
