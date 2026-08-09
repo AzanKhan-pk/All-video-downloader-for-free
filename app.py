@@ -301,7 +301,6 @@ def api_download():
             )
 
             options["merge_output_format"] = "mp4"
-
             file_type = "MP4"
 
         with yt_dlp.YoutubeDL(options) as ydl:
@@ -311,7 +310,6 @@ def api_download():
                 ydl.prepare_filename(info)
             )
 
-        # Find the actual downloaded file.
         if mode == "audio":
             downloaded = prepared_file.with_suffix(".mp3")
         else:
@@ -323,7 +321,6 @@ def api_download():
                 if mp4_files:
                     downloaded = mp4_files[0]
 
-        # Final fallback
         if not downloaded.exists():
             files = [
                 f for f in temp_dir.iterdir()
@@ -341,7 +338,6 @@ def api_download():
         platform = platform_for(url)
         timestamp = now_iso()
 
-        # Save download information
         with get_db() as connection:
             connection.execute(
                 """
@@ -376,17 +372,23 @@ def api_download():
             ),
         )
 
-        # Safe filename for Android, iPhone and PC
+        # Safe filename
         extension = downloaded.suffix.lower()
 
-        safe_name = safe_title(title)
+        # Create a safe filename without requiring safe_title()
+        safe_name = re.sub(
+            r"[^a-zA-Z0-9 _.-]",
+            "",
+            title or "video"
+        )
+
+        safe_name = safe_name[:90].strip()
 
         if not safe_name:
             safe_name = "VidLoom_Download"
 
         filename = f"{safe_name}{extension}"
 
-        # Send the file to the browser
         response = send_file(
             downloaded,
             as_attachment=True,
@@ -395,7 +397,6 @@ def api_download():
             max_age=0,
         )
 
-        # Helpful headers for mobile browsers
         response.headers["Content-Disposition"] = (
             f'attachment; filename="{filename}"'
         )
