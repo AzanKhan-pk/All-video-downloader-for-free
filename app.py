@@ -308,7 +308,6 @@ def api_download():
 
         # VIDEO
         else:
-            # Get the available formats from the source
             with yt_dlp.YoutubeDL(yt_options()) as check_ydl:
                 info_check = check_ydl.extract_info(
                     url,
@@ -317,7 +316,6 @@ def api_download():
 
             formats = info_check.get("formats") or []
 
-            # Find the highest available video resolution
             available_heights = sorted({
                 int(fmt.get("height"))
                 for fmt in formats
@@ -330,25 +328,22 @@ def api_download():
                     "No video quality is available for this video."
                 )
 
-            # If requested quality is higher than the source,
-            # do not upscale it.
+            # Never upscale beyond the source's maximum quality
             if height > max(available_heights):
                 raise ValueError(
                     f"{quality} is not available for this video. "
                     "Please select another quality."
                 )
 
-            # Find the best source quality that is >= requested quality.
-            # This allows FFmpeg to create the requested lower resolution
-            # when the exact resolution does not exist.
-            source_heights = [
+            # Exact quality if available; otherwise use the
+            # smallest available quality above the requested one.
+            suitable_heights = [
                 h for h in available_heights
                 if h >= height
             ]
 
-            source_height = min(source_heights)
+            source_height = min(suitable_heights)
 
-            # Download the selected source quality with best audio.
             options["format"] = (
                 f"bestvideo[height={source_height}]+"
                 f"bestaudio/"
@@ -357,8 +352,7 @@ def api_download():
 
             options["merge_output_format"] = "mp4"
 
-            # If the source resolution is higher than requested,
-            # FFmpeg will resize the video to the requested height.
+            # Resize higher source quality to requested quality
             if source_height > height:
                 options["postprocessors"] = [{
                     "key": "FFmpegVideoConvertor",
@@ -368,16 +362,6 @@ def api_download():
                 options["postprocessor_args"] = [
                     "-vf",
                     f"scale=-2:{height}",
-                    "-c:v",
-                    "libx264",
-                    "-crf",
-                    "23",
-                    "-preset",
-                    "medium",
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "128k",
                 ]
 
             file_type = "MP4"
