@@ -317,7 +317,8 @@ def api_download():
             formats = info_check.get("formats") or []
 
             exact_video_formats = [
-                fmt for fmt in formats
+                fmt
+                for fmt in formats
                 if fmt.get("height") == height
                 and fmt.get("vcodec") not in (None, "none")
             ]
@@ -329,11 +330,8 @@ def api_download():
                 )
 
             options["format"] = (
-                f"bestvideo[height={height}][ext=mp4]+"
-                f"bestaudio[ext=m4a]/"
                 f"bestvideo[height={height}]+"
                 f"bestaudio/"
-                f"best[height={height}][ext=mp4]/"
                 f"best[height={height}]"
             )
 
