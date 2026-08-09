@@ -232,11 +232,11 @@ def api_info():
                     if view_count is not None
                     else "Not available"
                 ),
-                "thumbnail": info.get("thumbnail"),
-                "platform": platform_for(url),
-                "url": url,
-            }
-        })
+            "thumbnail": info.get("thumbnail"),
+        "platform": platform_for(url),
+        "url": url,
+    }
+})
 
     except Exception as error:
         app.logger.warning("Info error: %s", error)
@@ -248,6 +248,7 @@ def api_info():
                 "and the URL is correct."
             )
         }), 400
+
 
 @app.post("/api/download")
 def api_download():
@@ -264,7 +265,19 @@ def api_download():
         if mode not in {"video", "audio"}:
             raise ValueError("Unsupported media type.")
 
-        height = QUALITY_HEIGHTS.get(quality, 720)
+        QUALITY_MAP = {
+            "360p": 360,
+            "480p": 480,
+            "720p": 720,
+            "1080p": 1080,
+            "1440p": 1440,
+            "4K": 2160,
+        }
+
+        if mode == "video" and quality not in QUALITY_MAP:
+            raise ValueError("Unsupported video quality.")
+
+        height = QUALITY_MAP.get(quality, 720)
 
         temp_dir = Path(
             tempfile.mkdtemp(
@@ -280,6 +293,7 @@ def api_download():
         options = yt_options()
         options["outtmpl"] = output_template
 
+        # AUDIO
         if mode == "audio":
             options.update({
                 "format": "bestaudio/best",
@@ -292,31 +306,62 @@ def api_download():
 
             file_type = "MP3"
 
+        # VIDEO
         else:
+            with yt_dlp.YoutubeDL(yt_options()) as check_ydl:
+                info_check = check_ydl.extract_info(
+                    url,
+                    download=False
+                )
+
+            formats = info_check.get("formats") or []
+
+            exact_video_formats = [
+                fmt for fmt in formats
+                if fmt.get("height") == height
+                and fmt.get("vcodec") not in (None, "none")
+            ]
+
+            if not exact_video_formats:
+                raise ValueError(
+                    f"{quality} is not available for this video. "
+                    "Please select another quality."
+                )
+
             options["format"] = (
-                f"bestvideo[height<={height}][ext=mp4]+"
+                f"bestvideo[height={height}][ext=mp4]+"
                 f"bestaudio[ext=m4a]/"
-                f"best[height<={height}][ext=mp4]/"
-                f"best[height<={height}]/best"
+                f"bestvideo[height={height}]+"
+                f"bestaudio/"
+                f"best[height={height}][ext=mp4]/"
+                f"best[height={height}]"
             )
 
             options["merge_output_format"] = "mp4"
             file_type = "MP4"
 
+        # DOWNLOAD
         with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=True)
+            info = ydl.extract_info(
+                url,
+                download=True
+            )
 
             prepared_file = Path(
                 ydl.prepare_filename(info)
             )
 
+        # FIND DOWNLOADED FILE
         if mode == "audio":
             downloaded = prepared_file.with_suffix(".mp3")
+
         else:
             downloaded = prepared_file
 
             if not downloaded.exists():
-                mp4_files = list(temp_dir.glob("*.mp4"))
+                mp4_files = list(
+                    temp_dir.glob("*.mp4")
+                )
 
                 if mp4_files:
                     downloaded = mp4_files[0]
@@ -334,6 +379,7 @@ def api_download():
 
             downloaded = files[0]
 
+        # DATABASE
         title = info.get("title") or "video"
         platform = platform_for(url)
         timestamp = now_iso()
@@ -361,6 +407,7 @@ def api_download():
                 ),
             )
 
+        # NOTIFICATION
         send_notification(
             "VIDLOOM: download",
             (
@@ -372,10 +419,9 @@ def api_download():
             ),
         )
 
-        # Safe filename
+        # SAFE FILENAME
         extension = downloaded.suffix.lower()
 
-        # Create a safe filename without requiring safe_title()
         safe_name = re.sub(
             r"[^a-zA-Z0-9 _.-]",
             "",
@@ -389,6 +435,7 @@ def api_download():
 
         filename = f"{safe_name}{extension}"
 
+        # SEND FILE
         response = send_file(
             downloaded,
             as_attachment=True,
@@ -407,7 +454,20 @@ def api_download():
 
         response.headers["Pragma"] = "no-cache"
 
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
         return response
+
+    except ValueError as error:
+        app.logger.warning(
+            "Download validation error: %s",
+            error
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(error)
+        }), 400
 
     except Exception as error:
         app.logger.exception(
@@ -423,15 +483,20 @@ def api_download():
             )
         }), 400
 
+
 @app.post("/api/comments")
 def api_comments():
     payload = request.get_json(silent=True) or {}
+
     name = (payload.get("name") or "").strip()[:80]
     comment = (payload.get("comment") or "").strip()[:1000]
 
     if len(name) < 2 or len(comment) < 3:
         return jsonify(
-            {"ok": False, "error": "Add your name and a useful comment."}
+            {
+                "ok": False,
+                "error": "Add your name and a useful comment."
+            }
         ), 400
 
     timestamp = now_iso()
@@ -447,24 +512,33 @@ def api_comments():
         f"User name: {name}\nComment: {comment}\nDate/time: {timestamp}",
     )
 
-    return jsonify({"ok": True, "message": "Thanks, your feedback is saved."})
+    return jsonify({
+        "ok": True,
+        "message": "Thanks, your feedback is saved."
+    })
 
 
 @app.route("/admin")
 def admin():
-    if request.args.get("key") != os.getenv("ADMIN_KEY", "change-admin-key"):
+    if request.args.get("key") != os.getenv(
+        "ADMIN_KEY",
+        "change-admin-key"
+    ):
         return "Admin access denied.", 403
 
     with get_db() as connection:
         visits = connection.execute(
             "SELECT COUNT(*) AS count FROM visits"
         ).fetchone()["count"]
+
         downloads = connection.execute(
             "SELECT COUNT(*) AS count FROM downloads"
         ).fetchone()["count"]
+
         comments = connection.execute(
             "SELECT COUNT(*) AS count FROM comments"
         ).fetchone()["count"]
+
         top_videos = connection.execute(
             """
             SELECT title, COUNT(*) AS count
@@ -474,6 +548,7 @@ def admin():
             LIMIT 5
             """
         ).fetchall()
+
         platforms = connection.execute(
             """
             SELECT platform, COUNT(*) AS count
@@ -490,17 +565,24 @@ def admin():
         "top_videos": top_videos,
         "platforms": platforms,
     }
-    return render_template("index.html", admin_data=admin_data)
+
+    return render_template(
+        "index.html",
+        admin_data=admin_data
+    )
 
 
 init_db()
 
-@app.route('/googledd736139896dc604.html')
+
+@app.route("/googledd736139896dc604.html")
 def google_verification():
     return send_from_directory(
         app.root_path,
-        'googledd736139896dc604.html'
+        "googledd736139896dc604.html"
     )
+
+
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
