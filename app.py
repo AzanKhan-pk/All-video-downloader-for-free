@@ -178,7 +178,7 @@ def yt_options():
 
         # YouTube JavaScript runtime
         "js_runtimes": {
-            "deno": r"C:\Users\AZAN KHAN\.deno\bin\deno.exe"
+            "deno": {}
         },
 
         # FFmpeg
