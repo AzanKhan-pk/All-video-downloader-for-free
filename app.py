@@ -169,9 +169,11 @@ def yt_options():
         "no_warnings": True,
         "noplaylist": True,
         "restrictfilenames": True,
+        "windowsfilenames": True,
         "geo_bypass": False,
-    }
 
+        "ffmpeg_location": r"C:\Users\AZAN KHAN\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.1-essentials_build\bin",
+    }
 @app.route("/")
 def index():
     with get_db() as connection:
@@ -282,22 +284,34 @@ def api_download():
 
         height = QUALITY_MAP.get(quality, 720)
 
+        # Temporary folder
         temp_dir = Path(
             tempfile.mkdtemp(
-                prefix="avd_",
+                prefix="vidloom_",
                 dir=DOWNLOAD_ROOT
             )
         )
 
+        # IMPORTANT:
+        # Use video ID instead of title.
+        # This avoids Windows invalid filename problems.
         output_template = str(
-            temp_dir / "%(title)s.%(ext)s"
+            temp_dir / "%(id)s.%(ext)s"
         )
 
         options = yt_options()
-        options["outtmpl"] = output_template
 
+        options.update({
+            "outtmpl": output_template,
+            "windowsfilenames": True,
+            "noplaylist": True,
+        })
+
+        # =========================
         # AUDIO
+        # =========================
         if mode == "audio":
+
             options.update({
                 "format": "bestaudio/best",
                 "postprocessors": [{
@@ -309,8 +323,11 @@ def api_download():
 
             file_type = "MP3"
 
+        # =========================
         # VIDEO
+        # =========================
         else:
+
             with yt_dlp.YoutubeDL(yt_options()) as check_ydl:
                 info_check = check_ydl.extract_info(
                     url,
@@ -320,7 +337,7 @@ def api_download():
             formats = info_check.get("formats") or []
 
             available_heights = sorted({
-                int(fmt.get("height"))
+                int(fmt["height"])
                 for fmt in formats
                 if fmt.get("height")
                 and fmt.get("vcodec") not in (None, "none")
@@ -331,15 +348,13 @@ def api_download():
                     "No video quality is available for this video."
                 )
 
-            # Never upscale beyond the source's maximum quality
+            # Don't allow quality higher than source
             if height > max(available_heights):
                 raise ValueError(
-                    f"{quality} is not available for this video. "
-                    "Please select another quality."
+                    f"{quality} is not available for this video."
                 )
 
-            # Exact quality if available; otherwise use the
-            # smallest available quality above the requested one.
+            # Find requested quality or next available quality
             suitable_heights = [
                 h for h in available_heights
                 if h >= height
@@ -348,14 +363,15 @@ def api_download():
             source_height = min(suitable_heights)
 
             options["format"] = (
-                f"bestvideo[height={source_height}]+"
-                f"bestaudio/"
-                f"best[height={source_height}]"
+                f"bestvideo[height={source_height}]+bestaudio/"
+                f"best[height={source_height}]/best"
             )
 
+            # Merge video + audio into MP4
             options["merge_output_format"] = "mp4"
 
-            # Resize higher source quality to requested quality
+            # If source quality is higher than requested,
+            # resize using FFmpeg.
             if source_height > height:
                 options["postprocessors"] = [{
                     "key": "FFmpegVideoConvertor",
@@ -369,8 +385,11 @@ def api_download():
 
             file_type = "MP4"
 
+        # =========================
         # DOWNLOAD
+        # =========================
         with yt_dlp.YoutubeDL(options) as ydl:
+
             info = ydl.extract_info(
                 url,
                 download=True
@@ -380,35 +399,48 @@ def api_download():
                 ydl.prepare_filename(info)
             )
 
+        # =========================
         # FIND DOWNLOADED FILE
+        # =========================
+
         if mode == "audio":
             downloaded = prepared_file.with_suffix(".mp3")
 
         else:
-            downloaded = prepared_file
+            downloaded = prepared_file.with_suffix(".mp4")
 
-            if not downloaded.exists():
-                mp4_files = list(
-                    temp_dir.glob("*.mp4")
-                )
-
-                if mp4_files:
-                    downloaded = mp4_files[0]
-
+        # Fallback: search for MP4/MP3
         if not downloaded.exists():
+
+            extension = "*.mp3" if mode == "audio" else "*.mp4"
+
+            candidates = list(
+                temp_dir.glob(extension)
+            )
+
+            if candidates:
+                downloaded = candidates[0]
+
+        # Final fallback
+        if not downloaded.exists():
+
             files = [
                 f for f in temp_dir.iterdir()
                 if f.is_file()
             ]
 
-            if not files:
-                raise RuntimeError(
-                    "Downloaded file could not be found."
-                )
+            if files:
+                downloaded = files[0]
 
-            downloaded = files[0]
+        if not downloaded.exists():
+            raise RuntimeError(
+                "Downloaded file could not be found."
+            )
 
+        # =========================
         # DATABASE
+        # =========================
+
         title = info.get("title") or "video"
         platform = platform_for(url)
         timestamp = now_iso()
@@ -436,69 +468,23 @@ def api_download():
                 ),
             )
 
-        # NOTIFICATION
-        send_notification(
-            "VIDLOOM: download",
-            (
-                f"Video title: {title}\n"
-                f"Platform: {platform}\n"
-                f"Quality: {quality}\n"
-                f"File type: {file_type}\n"
-                f"Date/time: {timestamp}"
+        # =========================
+        # RETURN FILE
+        # =========================
+
+        return send_file(
+            downloaded,
+            as_attachment=True,
+            download_name=downloaded.name,
+            mimetype=(
+                "audio/mpeg"
+                if mode == "audio"
+                else "video/mp4"
             ),
         )
 
-        # SAFE FILENAME
-        extension = downloaded.suffix.lower()
-
-        safe_name = re.sub(
-            r"[^a-zA-Z0-9 _.-]",
-            "",
-            title or "video"
-        )
-
-        safe_name = safe_name[:90].strip()
-
-        if not safe_name:
-            safe_name = "VidLoom_Download"
-
-        filename = f"{safe_name}{extension}"
-
-        # SEND FILE
-        response = send_file(
-            downloaded,
-            as_attachment=True,
-            download_name=filename,
-            mimetype="application/octet-stream",
-            max_age=0,
-        )
-
-        response.headers["Content-Disposition"] = (
-            f'attachment; filename="{filename}"'
-        )
-
-        response.headers["Cache-Control"] = (
-            "no-store, no-cache, must-revalidate, max-age=0"
-        )
-
-        response.headers["Pragma"] = "no-cache"
-
-        response.headers["X-Content-Type-Options"] = "nosniff"
-
-        return response
-
-    except ValueError as error:
-        app.logger.warning(
-            "Download validation error: %s",
-            error
-        )
-
-        return jsonify({
-            "ok": False,
-            "error": str(error)
-        }), 400
-
     except Exception as error:
+
         app.logger.exception(
             "Download error: %s",
             error
@@ -506,10 +492,7 @@ def api_download():
 
         return jsonify({
             "ok": False,
-            "error": (
-                "Download failed. Make sure the URL is public "
-                "and the selected quality is available."
-            )
+            "error": str(error)
         }), 400
 
 
