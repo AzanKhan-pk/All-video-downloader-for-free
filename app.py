@@ -19,10 +19,6 @@ DOWNLOAD_ROOT = Path(tempfile.gettempdir()) / "downloads"
 DOWNLOAD_ROOT.mkdir(exist_ok=True)
 app = Flask(__name__)
 # Railway deployment fix: send_file import
-@app.route("/ads.txt")
-def ads_txt():
-    return send_from_directory(".", "ads.txt", mimetype="text/plain")
-
 
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-this-secret-key")
 
