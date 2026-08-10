@@ -168,10 +168,20 @@ def yt_options():
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+
+        # Windows filename safety
         "restrictfilenames": True,
         "windowsfilenames": True,
+
+        # Network
         "geo_bypass": False,
 
+        # YouTube JavaScript runtime
+        "js_runtimes": {
+            "deno": r"C:\Users\AZAN KHAN\.deno\bin\deno.exe"
+        },
+
+        # FFmpeg
         "ffmpeg_location": r"C:\Users\AZAN KHAN\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.1-essentials_build\bin",
     }
 @app.route("/")
@@ -270,7 +280,7 @@ def api_download():
         if mode not in {"video", "audio"}:
             raise ValueError("Unsupported media type.")
 
-        QUALITY_MAP = {
+        quality_map = {
             "360p": 360,
             "480p": 480,
             "720p": 720,
@@ -279,12 +289,14 @@ def api_download():
             "4K": 2160,
         }
 
-        if mode == "video" and quality not in QUALITY_MAP:
+        if mode == "video" and quality not in quality_map:
             raise ValueError("Unsupported video quality.")
 
-        height = QUALITY_MAP.get(quality, 720)
+        requested_height = quality_map.get(quality, 720)
 
-        # Temporary folder
+        # -------------------------------------------------
+        # Temporary download folder
+        # -------------------------------------------------
         temp_dir = Path(
             tempfile.mkdtemp(
                 prefix="vidloom_",
@@ -292,9 +304,6 @@ def api_download():
             )
         )
 
-        # IMPORTANT:
-        # Use video ID instead of title.
-        # This avoids Windows invalid filename problems.
         output_template = str(
             temp_dir / "%(id)s.%(ext)s"
         )
@@ -303,13 +312,14 @@ def api_download():
 
         options.update({
             "outtmpl": output_template,
-            "windowsfilenames": True,
             "noplaylist": True,
+            "windowsfilenames": True,
+            "restrictfilenames": True,
         })
 
-        # =========================
+        # -------------------------------------------------
         # AUDIO
-        # =========================
+        # -------------------------------------------------
         if mode == "audio":
 
             options.update({
@@ -323,12 +333,15 @@ def api_download():
 
             file_type = "MP3"
 
-        # =========================
+        # -------------------------------------------------
         # VIDEO
-        # =========================
+        # -------------------------------------------------
         else:
 
-            with yt_dlp.YoutubeDL(yt_options()) as check_ydl:
+            # First get available formats
+            check_options = yt_options()
+
+            with yt_dlp.YoutubeDL(check_options) as check_ydl:
                 info_check = check_ydl.extract_info(
                     url,
                     download=False
@@ -336,6 +349,7 @@ def api_download():
 
             formats = info_check.get("formats") or []
 
+            # Find video heights
             available_heights = sorted({
                 int(fmt["height"])
                 for fmt in formats
@@ -348,46 +362,59 @@ def api_download():
                     "No video quality is available for this video."
                 )
 
-            # Don't allow quality higher than source
-            if height > max(available_heights):
+            # Never upscale
+            if requested_height > max(available_heights):
                 raise ValueError(
                     f"{quality} is not available for this video."
                 )
 
-            # Find requested quality or next available quality
-            suitable_heights = [
+            # Select requested quality or closest quality below it
+            lower_or_equal = [
                 h for h in available_heights
-                if h >= height
+                if h <= requested_height
             ]
 
-            source_height = min(suitable_heights)
+            if lower_or_equal:
+                source_height = max(lower_or_equal)
+            else:
+                source_height = min(available_heights)
 
-            options["format"] = (
-                f"bestvideo[height={source_height}]+bestaudio/"
-                f"best[height={source_height}]/best"
+            app.logger.info(
+                "Requested quality: %s, selected source height: %s",
+                requested_height,
+                source_height
             )
 
-            # Merge video + audio into MP4
+            # -------------------------------------------------
+            # Prefer MP4 video + M4A audio
+            # -------------------------------------------------
+            video_format = (
+                f"bestvideo[height={source_height}][ext=mp4]"
+                f"/bestvideo[height={source_height}]"
+            )
+
+            audio_format = (
+                "bestaudio[ext=m4a]"
+                "/bestaudio"
+            )
+
+            combined_format = (
+                f"{video_format}+{audio_format}"
+                f"/best[height={source_height}][ext=mp4]"
+                f"/best[height={source_height}]"
+                f"/best"
+            )
+
+            options["format"] = combined_format
             options["merge_output_format"] = "mp4"
-
-            # If source quality is higher than requested,
-            # resize using FFmpeg.
-            if source_height > height:
-                options["postprocessors"] = [{
-                    "key": "FFmpegVideoConvertor",
-                    "preferedformat": "mp4",
-                }]
-
-                options["postprocessor_args"] = [
-                    "-vf",
-                    f"scale=-2:{height}",
-                ]
 
             file_type = "MP4"
 
-        # =========================
+        # -------------------------------------------------
         # DOWNLOAD
-        # =========================
+        # -------------------------------------------------
+        app.logger.info("Starting %s download: %s", mode, url)
+
         with yt_dlp.YoutubeDL(options) as ydl:
 
             info = ydl.extract_info(
@@ -395,52 +422,54 @@ def api_download():
                 download=True
             )
 
-            prepared_file = Path(
-                ydl.prepare_filename(info)
-            )
-
-        # =========================
+        # -------------------------------------------------
         # FIND DOWNLOADED FILE
-        # =========================
-
+        # -------------------------------------------------
         if mode == "audio":
-            downloaded = prepared_file.with_suffix(".mp3")
+
+            mp3_files = list(temp_dir.glob("*.mp3"))
+
+            if not mp3_files:
+                raise RuntimeError(
+                    "MP3 file was not created."
+                )
+
+            downloaded = mp3_files[0]
 
         else:
-            downloaded = prepared_file.with_suffix(".mp4")
 
-        # Fallback: search for MP4/MP3
-        if not downloaded.exists():
+            mp4_files = list(temp_dir.glob("*.mp4"))
 
-            extension = "*.mp3" if mode == "audio" else "*.mp4"
+            if not mp4_files:
+                # Sometimes yt-dlp may produce another container
+                all_files = [
+                    f for f in temp_dir.iterdir()
+                    if f.is_file()
+                ]
 
-            candidates = list(
-                temp_dir.glob(extension)
-            )
+                if not all_files:
+                    raise RuntimeError(
+                        "Downloaded video file could not be found."
+                    )
 
-            if candidates:
-                downloaded = candidates[0]
+                downloaded = all_files[0]
 
-        # Final fallback
-        if not downloaded.exists():
-
-            files = [
-                f for f in temp_dir.iterdir()
-                if f.is_file()
-            ]
-
-            if files:
-                downloaded = files[0]
+            else:
+                downloaded = mp4_files[0]
 
         if not downloaded.exists():
             raise RuntimeError(
-                "Downloaded file could not be found."
+                "Downloaded file does not exist."
             )
 
-        # =========================
-        # DATABASE
-        # =========================
+        app.logger.info(
+            "Download completed: %s",
+            downloaded
+        )
 
+        # -------------------------------------------------
+        # DATABASE
+        # -------------------------------------------------
         title = info.get("title") or "video"
         platform = platform_for(url)
         timestamp = now_iso()
@@ -468,14 +497,17 @@ def api_download():
                 ),
             )
 
-        # =========================
-        # RETURN FILE
-        # =========================
-
-        return send_file(
+        # -------------------------------------------------
+        # SEND FILE
+        # -------------------------------------------------
+        response = send_file(
             downloaded,
             as_attachment=True,
-            download_name=downloaded.name,
+            download_name=(
+                f"{info.get('id') or 'video'}.mp3"
+                if mode == "audio"
+                else f"{info.get('id') or 'video'}.mp4"
+            ),
             mimetype=(
                 "audio/mpeg"
                 if mode == "audio"
@@ -483,8 +515,9 @@ def api_download():
             ),
         )
 
-    except Exception as error:
+        return response
 
+    except Exception as error:
         app.logger.exception(
             "Download error: %s",
             error
