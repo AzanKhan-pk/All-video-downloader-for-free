@@ -19,6 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2404211463113597"
      crossorigin="anonymous"></script>
 </head>
@@ -26,10 +27,18 @@
   <div class="noise"></div>
 
   <header class="site-header">
-    <a class="brand" href="#top" aria-label="VidLoom Video Downloader home">
-      <span class="brand-mark">AV</span>
-      <span>VidLoom VIDEO<br><b>DOWNLOADER</b></span>
-    </a>
+<a class="brand" href="#top" aria-label="VidLoom Video Downloader home">
+  <img
+    class="brand-logo"
+    src="{{ url_for('static', filename='logo.png') }}"
+    alt="VidLoom Video Downloader logo"
+  >
+
+  <span class="brand-text">
+    VidLoom VIDEO<br>
+    <b>DOWNLOADER</b>
+  </span>
+</a>
 
     <nav aria-label="Primary navigation">
       <a href="#downloader">Downloader</a>
