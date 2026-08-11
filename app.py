@@ -480,39 +480,26 @@ def run_download_job(
             "4K": 2160,
         }
 
-        requested_height = quality_map.get(
-            quality,
-            720
-        )
+        requested_height = quality_map.get(quality, 720)
 
-        # ----------------------------------------------------
         # Temporary directory
-        # ----------------------------------------------------
-
         if job.get("temp_dir"):
-
-            temp_dir = Path(
-                job["temp_dir"]
-            )
-
+            temp_dir = Path(job["temp_dir"])
         else:
-
             temp_dir = Path(
                 tempfile.mkdtemp(
                     prefix="vidloom_",
-                    dir=DOWNLOAD_ROOT
+                    dir=DOWNLOAD_ROOT,
                 )
             )
-
             update_job(
                 job_id,
-                temp_dir=str(temp_dir)
+                temp_dir=str(temp_dir),
             )
 
         output_template = str(
             temp_dir / "%(id)s.%(ext)s"
         )
-
         # ----------------------------------------------------
         # Base yt-dlp options
         # ----------------------------------------------------
@@ -631,159 +618,155 @@ def run_download_job(
                     available_heights
                 )
 
-video_format = (
-    f"bestvideo[height={source_height}][ext=mp4]"
-    f"/bestvideo[height={source_height}]"
-)
+            video_format = (
+                f"bestvideo[height={source_height}][ext=mp4]"
+                f"/bestvideo[height={source_height}]"
+            )
 
-audio_format = (
-    "bestaudio[ext=m4a]"
-    "/bestaudio"
-)
+            audio_format = (
+                "bestaudio[ext=m4a]"
+                "/bestaudio"
+            )
 
-combined_format = (
-    f"{video_format}+{audio_format}"
-    f"/best[height={source_height}][ext=mp4]"
-    f"/best[height={source_height}]"
-    f"/best"
-)
-
-options["format"] = combined_format
-options["merge_output_format"] = "mp4"
+            combined_format = (
+                f"{video_format}+{audio_format}"
+                f"/best[height={source_height}][ext=mp4]"
+                f"/best[height={source_height}]"
+                f"/best"
+            )
 
             options["format"] = combined_format
-
             options["merge_output_format"] = "mp4"
 
             file_type = "MP4"
 
-        # ----------------------------------------------------
-        # START REAL DOWNLOAD
-        # ----------------------------------------------------
+            # ----------------------------------------------------
+            # START REAL DOWNLOAD
+            # ----------------------------------------------------
 
-        update_job(
-            job_id,
-            status="downloading"
-        )
-
-        with yt_dlp.YoutubeDL(
-            options
-        ) as ydl:
-
-            info = ydl.extract_info(
-                url,
-                download=True
+            update_job(
+                job_id,
+                status="downloading"
             )
 
-        # ----------------------------------------------------
-        # FIND DOWNLOADED FILE
-        # ----------------------------------------------------
+            with yt_dlp.YoutubeDL(
+                options
+            ) as ydl:
 
-        if mode == "audio":
-
-            mp3_files = list(
-                temp_dir.glob("*.mp3")
-            )
-
-            if not mp3_files:
-
-                raise RuntimeError(
-                    "MP3 file was not created."
+                info = ydl.extract_info(
+                    url,
+                    download=True
                 )
 
-            downloaded = mp3_files[0]
+            # ----------------------------------------------------
+            # FIND DOWNLOADED FILE
+            # ----------------------------------------------------
 
-        else:
+            if mode == "audio":
 
-            mp4_files = list(
-                temp_dir.glob("*.mp4")
-            )
+                mp3_files = list(
+                    temp_dir.glob("*.mp3")
+                )
 
-            if mp4_files:
+                if not mp3_files:
 
-                downloaded = mp4_files[0]
+                    raise RuntimeError(
+                        "MP3 file was not created."
+                    )
+
+                downloaded = mp3_files[0]
 
             else:
 
-                all_files = [
-                    file
-                    for file in temp_dir.iterdir()
-                    if file.is_file()
-                    and not file.name.endswith(".part")
-                ]
-
-                if not all_files:
-
-                    raise RuntimeError(
-                        "Downloaded video file could not be found."
-                    )
-
-                downloaded = all_files[0]
-
-        if not downloaded.exists():
-
-            raise RuntimeError(
-                "Downloaded file does not exist."
-            )
-
-        # ----------------------------------------------------
-        # SAVE DATABASE RECORD
-        # ----------------------------------------------------
-
-        title = (
-            info.get("title")
-            or job.get("title")
-            or "video"
-        )
-
-        platform = platform_for(url)
-
-        timestamp = now_iso()
-
-        with get_db() as connection:
-
-            connection.execute(
-                """
-                INSERT INTO downloads(
-                    title,
-                    platform,
-                    quality,
-                    file_type,
-                    source_url,
-                    created_at
+                mp4_files = list(
+                    temp_dir.glob("*.mp4")
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    title,
-                    platform,
-                    quality,
-                    file_type,
-                    url,
-                    timestamp,
-                ),
+
+                if mp4_files:
+
+                    downloaded = mp4_files[0]
+
+                else:
+
+                    all_files = [
+                        file
+                        for file in temp_dir.iterdir()
+                        if file.is_file()
+                        and not file.name.endswith(".part")
+                    ]
+
+                    if not all_files:
+
+                        raise RuntimeError(
+                            "Downloaded video file could not be found."
+                        )
+
+                    downloaded = all_files[0]
+
+            if not downloaded.exists():
+
+                raise RuntimeError(
+                    "Downloaded file does not exist."
+                )
+
+            # ----------------------------------------------------
+            # SAVE DATABASE RECORD
+            # ----------------------------------------------------
+
+            title = (
+                info.get("title")
+                or job.get("title")
+                or "video"
             )
 
-        # ----------------------------------------------------
-        # COMPLETE
-        # ----------------------------------------------------
+            platform = platform_for(url)
 
-        final_size = downloaded.stat().st_size
+            timestamp = now_iso()
 
-        update_job(
-            job_id,
-            status="completed",
-            downloaded_bytes=final_size,
-            total_bytes=final_size,
-            percent=100,
-            speed=0,
-            eta=0,
-            file_path=str(downloaded),
-            filename=downloaded.name,
-            title=title,
-            platform=platform,
-            file_type=file_type,
-        )
+            with get_db() as connection:
+
+                connection.execute(
+                    """
+                    INSERT INTO downloads(
+                        title,
+                        platform,
+                        quality,
+                        file_type,
+                        source_url,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        title,
+                        platform,
+                        quality,
+                        file_type,
+                        url,
+                        timestamp,
+                    ),
+                )
+
+            # ----------------------------------------------------
+            # COMPLETE
+            # ----------------------------------------------------
+
+            final_size = downloaded.stat().st_size
+
+            update_job(
+                job_id,
+                status="completed",
+                downloaded_bytes=final_size,
+                total_bytes=final_size,
+                percent=100,
+                speed=0,
+                eta=0,
+                file_path=str(downloaded),
+                filename=downloaded.name,
+                title=title,
+                platform=platform,
+                file_type=file_type,
+            )
 
     except DownloadPaused:
 
