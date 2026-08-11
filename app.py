@@ -631,22 +631,25 @@ def run_download_job(
                     available_heights
                 )
 
-            video_format = (
-                f"bestvideo[height={source_height}][ext=mp4]"
-                f"/bestvideo[height={source_height}]"
-            )
+video_format = (
+    f"bestvideo[height={source_height}][ext=mp4]"
+    f"/bestvideo[height={source_height}]"
+)
 
-            audio_format = (
-                "bestaudio[ext=m4a]"
-                "/bestaudio"
-            )
+audio_format = (
+    "bestaudio[ext=m4a]"
+    "/bestaudio"
+)
 
-            combined_format = (
-                f"{video_format}+{audio_format}"
-                f"/best[height={source_height}][ext=mp4]"
-                f"/best[height={source_height}]"
-                f"/best"
-            )
+combined_format = (
+    f"{video_format}+{audio_format}"
+    f"/best[height={source_height}][ext=mp4]"
+    f"/best[height={source_height}]"
+    f"/best"
+)
+
+options["format"] = combined_format
+options["merge_output_format"] = "mp4"
 
             options["format"] = combined_format
 
