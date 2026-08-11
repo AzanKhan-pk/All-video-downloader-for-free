@@ -176,13 +176,14 @@ async function downloadMedia() {
   setButtonLoading(
     downloadButton,
     true,
-    "Preparing...",
+    "Starting...",
     `Download ${selectedMode === "audio" ? "MP3" : "MP4"} ↗`
   );
 
-  setStatus("Preparing your file...");
+  setStatus("Starting download...");
 
   try {
+    // Start background download
     const response = await fetch("/api/download", {
       method: "POST",
       headers: {
@@ -195,47 +196,192 @@ async function downloadMedia() {
       })
     });
 
-    if (!response.ok) {
-      const data = await response.json();
+    const data = await response.json();
+
+    if (!response.ok || !data.ok || !data.job_id) {
       throw new Error(
-        data.error || "Download failed."
+        data.error || "Could not start the download."
       );
     }
 
-    const fileBlob = await response.blob();
-    const temporaryUrl = URL.createObjectURL(fileBlob);
-    const downloadLink = document.createElement("a");
+    const jobId = data.job_id;
 
-    const safeFileName = currentVideo.title
-      .replace(/[^\w\s.-]/g, "")
-      .trim()
-      .slice(0, 90) || "video";
+    setStatus("Downloading... 0%");
 
-    const fileExtension =
-      selectedMode === "audio" ? "mp3" : "mp4";
+    // Check real download progress
+    while (true) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-    downloadLink.href = temporaryUrl;
-    downloadLink.download = `${safeFileName}.${fileExtension}`;
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    downloadLink.remove();
+      const statusResponse = await fetch(
+        `/api/download/${jobId}/status`
+      );
 
-    URL.revokeObjectURL(temporaryUrl);
+      const statusData = await statusResponse.json();
 
-    setStatus("Your download is ready.", "success");
+      if (!statusResponse.ok || !statusData.ok) {
+        throw new Error(
+          statusData.error || "Could not read download status."
+        );
+      }
+
+      const job = statusData.job;
+
+      const percent = Number(job.percent || 0);
+      const downloaded = formatBytes(job.downloaded_bytes || 0);
+      const total = formatBytes(job.total_bytes || 0);
+      const speed = formatBytes(job.speed || 0);
+
+      if (job.status === "downloading") {
+        setStatus(
+          `Downloading... ${percent.toFixed(1)}% • ${downloaded} / ${total} • ${speed}/s`
+        );
+      }
+
+      if (job.status === "preparing" || job.status === "starting") {
+        setStatus("Preparing download...");
+      }
+
+      if (job.status === "processing") {
+        setStatus("Processing video...");
+      }
+
+      if (job.status === "paused") {
+        setStatus("Download paused.");
+      }
+
+      if (job.status === "network_error") {
+        setStatus(
+          job.error || "Network issue detected.",
+          "error"
+        );
+        break;
+      }
+
+      if (job.status === "cancelled") {
+        setStatus("Download cancelled.", "error");
+        break;
+      }
+
+      if (job.status === "error") {
+        throw new Error(
+          job.error || "Download failed."
+        );
+      }
+
+      if (job.status === "completed") {
+        setStatus("Download completed. Preparing your file...");
+
+        // Get the actual downloaded file
+        const fileResponse = await fetch(
+          `/api/download/${jobId}/file`
+        );
+
+        if (!fileResponse.ok) {
+          let errorMessage = "Could not retrieve the downloaded file.";
+
+          try {
+            const errorData = await fileResponse.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch (_) {}
+
+          throw new Error(errorMessage);
+        }
+
+        const fileBlob = await fileResponse.blob();
+
+        if (!fileBlob.size) {
+          throw new Error("Downloaded file is empty.");
+        }
+
+        const temporaryUrl =
+          URL.createObjectURL(fileBlob);
+
+        const downloadLink =
+          document.createElement("a");
+
+        const safeFileName =
+          (currentVideo.title || "video")
+            .replace(/[^\w\s.-]/g, "")
+            .trim()
+            .slice(0, 90) || "video";
+
+        const fileExtension =
+          selectedMode === "audio"
+            ? "mp3"
+            : "mp4";
+
+        downloadLink.href = temporaryUrl;
+        downloadLink.download =
+          `${safeFileName}.${fileExtension}`;
+
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        downloadLink.remove();
+
+        setTimeout(() => {
+          URL.revokeObjectURL(temporaryUrl);
+        }, 5000);
+
+        setStatus(
+          "Your download is ready.",
+          "success"
+        );
+
+        break;
+      }
+    }
+
   } catch (error) {
+
+    console.error("Download error:", error);
+
     setStatus(
       error.message || "Download failed.",
       "error"
     );
+
   } finally {
+
     setButtonLoading(
       downloadButton,
       false,
-      "Preparing...",
+      "Starting...",
       `Download ${selectedMode === "audio" ? "MP3" : "MP4"} ↗`
     );
   }
+}
+
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = [
+    "B",
+    "KB",
+    "MB",
+    "GB",
+    "TB"
+  ];
+
+  const index = Math.floor(
+    Math.log(bytes) / Math.log(1024)
+  );
+
+  const safeIndex = Math.min(
+    index,
+    units.length - 1
+  );
+
+  const value =
+    bytes / Math.pow(1024, safeIndex);
+
+  if (safeIndex === 0) {
+    return `${Math.round(value)} ${units[safeIndex]}`;
+  }
+
+  return `${value.toFixed(2)} ${units[safeIndex]}`;
 }
 
 $("#commentForm").addEventListener("submit", async (event) => {

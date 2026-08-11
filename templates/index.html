@@ -198,6 +198,88 @@
 
         <div id="status" class="status" role="status" aria-live="polite"></div>
         <div id="result" class="result" hidden></div>
+        <div
+  id="downloadProgress"
+  class="download-progress"
+  hidden
+  aria-live="polite"
+>
+  <div class="download-progress-head">
+
+    <div>
+      <p class="download-progress-label">
+        DOWNLOAD STATUS
+      </p>
+
+      <h3 id="downloadTitle">
+        Preparing download...
+      </h3>
+    </div>
+
+    <strong id="downloadPercent">
+      0%
+    </strong>
+
+  </div>
+
+  <div class="download-progress-track">
+    <div
+      id="downloadProgressBar"
+      class="download-progress-bar"
+      style="width: 0%"
+    ></div>
+  </div>
+
+  <div class="download-progress-stats">
+
+    <span id="downloadAmount">
+      0 B / —
+    </span>
+
+    <span id="downloadSpeed">
+      —
+    </span>
+
+    <span id="downloadEta">
+      ETA —
+    </span>
+
+  </div>
+
+  <div
+    id="downloadNetwork"
+    class="download-network"
+    hidden
+  ></div>
+
+  <div class="download-progress-actions">
+
+    <button
+      id="pauseDownloadBtn"
+      type="button"
+    >
+      Pause
+    </button>
+
+    <button
+      id="resumeDownloadBtn"
+      type="button"
+      hidden
+    >
+      Resume
+    </button>
+
+    <button
+      id="cancelDownloadBtn"
+      type="button"
+      class="download-cancel"
+    >
+      Cancel
+    </button>
+
+  </div>
+
+</div>
       </div>
     </section>
 

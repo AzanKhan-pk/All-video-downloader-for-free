@@ -5979,3 +5979,141 @@ select option{background:var(--surface);color:var(--ink)}
         font-size: 8px;
     }
 }
+/* ==========================================================
+   VIDLOOM DOWNLOAD PROGRESS
+   ========================================================== */
+
+.download-progress {
+  margin-top: 22px;
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.download-progress-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.download-progress-label {
+  margin: 0 0 7px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  opacity: 0.55;
+}
+
+.download-progress-head h3 {
+  margin: 0;
+  max-width: 650px;
+  font-size: 17px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+#downloadPercent {
+  flex: 0 0 auto;
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+
+.download-progress-track {
+  width: 100%;
+  height: 8px;
+  margin-top: 20px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.download-progress-bar {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: currentColor;
+  transition: width 0.25s ease;
+}
+
+.download-progress-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.download-progress-stats span:nth-child(2) {
+  text-align: center;
+}
+
+.download-progress-stats span:nth-child(3) {
+  text-align: right;
+}
+
+.download-network {
+  margin-top: 15px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.download-progress-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.download-progress-actions button {
+  min-width: 100px;
+}
+
+.download-progress-actions .download-cancel {
+  opacity: 0.72;
+}
+
+@media (max-width: 640px) {
+
+  .download-progress {
+    padding: 17px;
+  }
+
+  .download-progress-head {
+    gap: 10px;
+  }
+
+  .download-progress-head h3 {
+    font-size: 14px;
+  }
+
+  #downloadPercent {
+    font-size: 20px;
+  }
+
+  .download-progress-stats {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .download-progress-stats span,
+  .download-progress-stats span:nth-child(2),
+  .download-progress-stats span:nth-child(3) {
+    text-align: left;
+  }
+
+  .download-progress-actions {
+    flex-wrap: wrap;
+  }
+
+  .download-progress-actions button {
+    flex: 1 1 100px;
+  }
+}

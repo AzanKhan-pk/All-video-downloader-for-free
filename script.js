@@ -165,82 +165,732 @@ fetchButton.addEventListener("click", async () => {
   }
 });
 
-async function downloadMedia() {
-  if (!currentVideo) {
-    setStatus("Fetch the media details before downloading.", "error");
+// ==========================================================
+// DOWNLOAD PROGRESS SYSTEM
+// ==========================================================
+
+let activeDownloadJob = null;
+let progressTimer = null;
+
+
+function formatBytes(bytes) {
+
+  if (!bytes || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = [
+    "B",
+    "KB",
+    "MB",
+    "GB",
+    "TB"
+  ];
+
+  const index = Math.min(
+    Math.floor(
+      Math.log(bytes) / Math.log(1024)
+    ),
+    units.length - 1
+  );
+
+  const value =
+    bytes / Math.pow(1024, index);
+
+  return `${value.toFixed(
+    index === 0 ? 0 : 2
+  )} ${units[index]}`;
+}
+
+
+function formatSpeed(bytesPerSecond) {
+
+  if (
+    !bytesPerSecond ||
+    bytesPerSecond <= 0
+  ) {
+    return "Speed —";
+  }
+
+  return `${formatBytes(
+    bytesPerSecond
+  )}/s`;
+}
+
+
+function formatEta(seconds) {
+
+  if (
+    seconds === null ||
+    seconds === undefined ||
+    !Number.isFinite(seconds)
+  ) {
+    return "ETA —";
+  }
+
+  seconds = Math.max(
+    0,
+    Math.round(seconds)
+  );
+
+  const hours =
+    Math.floor(seconds / 3600);
+
+  const minutes =
+    Math.floor(
+      (seconds % 3600) / 60
+    );
+
+  const secs =
+    seconds % 60;
+
+  if (hours > 0) {
+    return `ETA ${hours}h ${minutes}m`;
+  }
+
+  if (minutes > 0) {
+    return `ETA ${minutes}m ${secs}s`;
+  }
+
+  return `ETA ${secs}s`;
+}
+
+
+function showDownloadProgress() {
+
+  const box =
+    $("#downloadProgress");
+
+  if (box) {
+    box.hidden = false;
+  }
+}
+
+
+function updateDownloadProgress(job) {
+
+  const title =
+    $("#downloadTitle");
+
+  const percent =
+    $("#downloadPercent");
+
+  const bar =
+    $("#downloadProgressBar");
+
+  const amount =
+    $("#downloadAmount");
+
+  const speed =
+    $("#downloadSpeed");
+
+  const eta =
+    $("#downloadEta");
+
+  const network =
+    $("#downloadNetwork");
+
+  const pauseButton =
+    $("#pauseDownloadBtn");
+
+  const resumeButton =
+    $("#resumeDownloadBtn");
+
+  if (!title) {
     return;
   }
 
-  const downloadButton = $("#downloadBtn");
+  const safePercent =
+    Math.min(
+      100,
+      Math.max(
+        0,
+        Number(job.percent || 0)
+      )
+    );
+
+  title.textContent =
+    job.title ||
+    "Preparing download...";
+
+  percent.textContent =
+    `${safePercent.toFixed(0)}%`;
+
+  bar.style.width =
+    `${safePercent}%`;
+
+  const downloaded =
+    formatBytes(
+      Number(
+        job.downloaded_bytes || 0
+      )
+    );
+
+  const total =
+    job.total_bytes
+      ? formatBytes(
+          Number(
+            job.total_bytes
+          )
+        )
+      : "—";
+
+  amount.textContent =
+    `${downloaded} / ${total}`;
+
+  speed.textContent =
+    formatSpeed(
+      Number(job.speed || 0)
+    );
+
+  eta.textContent =
+    formatEta(job.eta);
+
+  if (
+    job.status === "network_error"
+  ) {
+
+    network.hidden = false;
+
+    network.textContent =
+      "⚠ Network issue — press Resume when connection is back.";
+
+    pauseButton.hidden = true;
+    resumeButton.hidden = false;
+
+  } else if (
+    job.status === "paused"
+  ) {
+
+    network.hidden = false;
+
+    network.textContent =
+      "Download paused.";
+
+    pauseButton.hidden = true;
+    resumeButton.hidden = false;
+
+  } else {
+
+    network.hidden = true;
+
+    pauseButton.hidden =
+      ![
+        "starting",
+        "preparing",
+        "downloading"
+      ].includes(job.status);
+
+    resumeButton.hidden = true;
+  }
+
+  if (
+    job.status === "completed"
+  ) {
+
+    title.textContent =
+      "Download complete";
+
+    percent.textContent =
+      "100%";
+
+    bar.style.width =
+      "100%";
+
+    speed.textContent =
+      "Complete";
+
+    eta.textContent =
+      "Ready";
+
+    network.hidden = true;
+
+    pauseButton.hidden = true;
+    resumeButton.hidden = true;
+  }
+}
+
+
+async function getDownloadStatus() {
+
+  if (!activeDownloadJob) {
+    return null;
+  }
+
+  const response =
+    await fetch(
+      `/api/download/${activeDownloadJob}/status`,
+      {
+        cache: "no-store"
+      }
+    );
+
+  const data =
+    await response.json();
+
+  if (
+    !response.ok ||
+    !data.ok
+  ) {
+    throw new Error(
+      data.error ||
+      "Could not read download status."
+    );
+  }
+
+  return data.job;
+}
+
+
+function stopProgressPolling() {
+
+  if (progressTimer) {
+    clearTimeout(progressTimer);
+    progressTimer = null;
+  }
+}
+
+
+async function pollDownloadStatus() {
+
+  stopProgressPolling();
+
+  if (!activeDownloadJob) {
+    return;
+  }
+
+  try {
+
+    const job =
+      await getDownloadStatus();
+
+    updateDownloadProgress(job);
+
+    if (
+      job.status === "completed"
+    ) {
+
+      stopProgressPolling();
+
+      const link =
+        document.createElement("a");
+
+      link.href =
+        `/api/download/${activeDownloadJob}/file`;
+
+      link.download = "";
+
+      document.body.appendChild(link);
+
+      link.click();
+
+      link.remove();
+
+      setStatus(
+        "Your download is ready.",
+        "success"
+      );
+
+      const downloadButton =
+        $("#downloadBtn");
+
+      if (downloadButton) {
+
+        setButtonLoading(
+          downloadButton,
+          false,
+          "Preparing...",
+          `Download ${
+            selectedMode === "audio"
+              ? "MP3"
+              : "MP4"
+          } ↗`
+        );
+      }
+
+      return;
+    }
+
+    if (
+      job.status === "cancelled"
+    ) {
+
+      stopProgressPolling();
+
+      setStatus(
+        "Download cancelled.",
+        "error"
+      );
+
+      return;
+    }
+
+    if (
+      job.status === "error"
+    ) {
+
+      stopProgressPolling();
+
+      setStatus(
+        job.error ||
+        "Download failed.",
+        "error"
+      );
+
+      return;
+    }
+
+    progressTimer =
+      setTimeout(
+        pollDownloadStatus,
+        700
+      );
+
+  } catch (error) {
+
+    progressTimer =
+      setTimeout(
+        pollDownloadStatus,
+        1500
+      );
+  }
+}
+
+
+async function downloadMedia() {
+
+  if (!currentVideo) {
+
+    setStatus(
+      "Fetch the media details before downloading.",
+      "error"
+    );
+
+    return;
+  }
+
+  const downloadButton =
+    $("#downloadBtn");
 
   setButtonLoading(
     downloadButton,
     true,
-    "Preparing...",
-    `Download ${selectedMode === "audio" ? "MP3" : "MP4"} ↗`
+    "Starting...",
+    `Download ${
+      selectedMode === "audio"
+        ? "MP3"
+        : "MP4"
+    } ↗`
   );
 
-  setStatus("Preparing your file...");
+  showDownloadProgress();
+
+  setStatus(
+    "Starting your download..."
+  );
 
   try {
-    const response = await fetch("/api/download", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        url: currentVideo.url,
-        mode: selectedMode,
-        quality: selectedQuality
-      })
-    });
 
-    if (!response.ok) {
-      const data = await response.json();
+    const response =
+      await fetch(
+        "/api/download",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          body: JSON.stringify({
+            url: currentVideo.url,
+            mode: selectedMode,
+            quality: selectedQuality
+          })
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (
+      !response.ok ||
+      !data.ok
+    ) {
+
       throw new Error(
-        data.error || "Download failed."
+        data.error ||
+        "Could not start download."
       );
     }
 
-const fileBlob = await response.blob();
+    activeDownloadJob =
+      data.job_id;
 
-const temporaryUrl = URL.createObjectURL(fileBlob);
-const downloadLink = document.createElement("a");
-
-const safeFileName = currentVideo.title
-  .replace(/[^\w\s.-]/g, "")
-  .trim()
-  .slice(0, 90) || "video";
-
-const fileExtension =
-  selectedMode === "audio" ? "mp3" : "mp4";
-
-downloadLink.href = temporaryUrl;
-downloadLink.download = `${safeFileName}.${fileExtension}`;
-
-document.body.appendChild(downloadLink);
-downloadLink.click();
-downloadLink.remove();
-
-setStatus("Download started.", "success");
-
-setTimeout(() => {
-  URL.revokeObjectURL(temporaryUrl);
-}, 1000);
-  } catch (error) {
     setStatus(
-      error.message || "Download failed.",
+      "Download started.",
+      "success"
+    );
+
+    pollDownloadStatus();
+
+  } catch (error) {
+
+    setStatus(
+      error.message ||
+      "Download failed.",
       "error"
     );
-  } finally {
+
     setButtonLoading(
       downloadButton,
       false,
       "Preparing...",
-      `Download ${selectedMode === "audio" ? "MP3" : "MP4"} ↗`
+      `Download ${
+        selectedMode === "audio"
+          ? "MP3"
+          : "MP4"
+      } ↗`
     );
   }
 }
+
+
+// ==========================================================
+// PAUSE
+// ==========================================================
+
+$("#pauseDownloadBtn")?.addEventListener(
+  "click",
+  async () => {
+
+    if (!activeDownloadJob) {
+      return;
+    }
+
+    try {
+
+      const response =
+        await fetch(
+          `/api/download/${activeDownloadJob}/pause`,
+          {
+            method: "POST"
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !data.ok
+      ) {
+
+        throw new Error(
+          data.error ||
+          "Could not pause download."
+        );
+      }
+
+      setStatus(
+        "Pausing download..."
+      );
+
+    } catch (error) {
+
+      setStatus(
+        error.message ||
+        "Could not pause download.",
+        "error"
+      );
+    }
+  }
+);
+
+
+// ==========================================================
+// RESUME
+// ==========================================================
+
+$("#resumeDownloadBtn")?.addEventListener(
+  "click",
+  async () => {
+
+    if (!activeDownloadJob) {
+      return;
+    }
+
+    try {
+
+      const response =
+        await fetch(
+          `/api/download/${activeDownloadJob}/resume`,
+          {
+            method: "POST"
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !data.ok
+      ) {
+
+        throw new Error(
+          data.error ||
+          "Could not resume download."
+        );
+      }
+
+      setStatus(
+        "Resuming download...",
+        "success"
+      );
+
+      pollDownloadStatus();
+
+    } catch (error) {
+
+      setStatus(
+        error.message ||
+        "Could not resume download.",
+        "error"
+      );
+    }
+  }
+);
+
+
+// ==========================================================
+// CANCEL
+// ==========================================================
+
+$("#cancelDownloadBtn")?.addEventListener(
+  "click",
+  async () => {
+
+    if (!activeDownloadJob) {
+      return;
+    }
+
+    try {
+
+      const response =
+        await fetch(
+          `/api/download/${activeDownloadJob}/cancel`,
+          {
+            method: "POST"
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !data.ok
+      ) {
+
+        throw new Error(
+          data.error ||
+          "Could not cancel download."
+        );
+      }
+
+      stopProgressPolling();
+
+      setStatus(
+        "Download cancelled.",
+        "error"
+      );
+
+      const downloadButton =
+        $("#downloadBtn");
+
+      if (downloadButton) {
+
+        setButtonLoading(
+          downloadButton,
+          false,
+          "Preparing...",
+          `Download ${
+            selectedMode === "audio"
+              ? "MP3"
+              : "MP4"
+          } ↗`
+        );
+      }
+
+    } catch (error) {
+
+      setStatus(
+        error.message ||
+        "Could not cancel download.",
+        "error"
+      );
+    }
+  }
+);
+
+
+// ==========================================================
+// NETWORK STATUS
+// ==========================================================
+
+window.addEventListener(
+  "offline",
+  () => {
+
+    if (activeDownloadJob) {
+
+      const network =
+        $("#downloadNetwork");
+
+      if (network) {
+
+        network.hidden = false;
+
+        network.textContent =
+          "⚠ Internet connection lost.";
+      }
+
+      setStatus(
+        "Internet connection lost.",
+        "error"
+      );
+    }
+  }
+);
+
+
+window.addEventListener(
+  "online",
+  () => {
+
+    if (activeDownloadJob) {
+
+      const network =
+        $("#downloadNetwork");
+
+      if (network) {
+
+        network.hidden = false;
+
+        network.textContent =
+          "Connection restored. Checking download...";
+      }
+
+      setStatus(
+        "Internet connection restored.",
+        "success"
+      );
+
+      pollDownloadStatus();
+    }
+  }
+);
 
 $("#commentForm").addEventListener("submit", async (event) => {
   event.preventDefault();
