@@ -358,8 +358,7 @@ def yt_options():
             "deno": {}
         },
 
-        # FFmpeg
-        "ffmpeg_location": r"C:\Users\AZAN KHAN\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.1-essentials_build\bin",
+     
     }
 @app.route("/")
 def index():
@@ -606,57 +605,37 @@ def run_download_job(
                 if height <= requested_height
             ]
 
-            if lower_or_equal:
+        if lower_or_equal:
+            source_height = max(lower_or_equal)
+        else:
+            source_height = min(available_heights)
 
-                source_height = max(
-                    lower_or_equal
-                )
+        combined_format = (
+            f"bestvideo[height<={source_height}][ext=mp4]+"
+            f"bestaudio[ext=m4a]/"
+            f"best[height<={source_height}][ext=mp4]/"
+            f"best[height<={source_height}]/"
+            f"best"
+        )
 
-            else:
+        options["format"] = combined_format
+        options["merge_output_format"] = "mp4"
+        file_type = "MP4"
 
-                source_height = min(
-                    available_heights
-                )
+        # ----------------------------------------------------
+        # START REAL DOWNLOAD
+        # ----------------------------------------------------
 
-            video_format = (
-                f"bestvideo[height={source_height}][ext=mp4]"
-                f"/bestvideo[height={source_height}]"
+        update_job(
+            job_id,
+            status="downloading"
+        )
+
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(
+                url,
+                download=True
             )
-
-            audio_format = (
-                "bestaudio[ext=m4a]"
-                "/bestaudio"
-            )
-
-            combined_format = (
-                f"{video_format}+{audio_format}"
-                f"/best[height={source_height}][ext=mp4]"
-                f"/best[height={source_height}]"
-                f"/best"
-            )
-
-            options["format"] = combined_format
-            options["merge_output_format"] = "mp4"
-
-            file_type = "MP4"
-
-            # ----------------------------------------------------
-            # START REAL DOWNLOAD
-            # ----------------------------------------------------
-
-            update_job(
-                job_id,
-                status="downloading"
-            )
-
-            with yt_dlp.YoutubeDL(
-                options
-            ) as ydl:
-
-                info = ydl.extract_info(
-                    url,
-                    download=True
-                )
 
             # ----------------------------------------------------
             # FIND DOWNLOADED FILE
