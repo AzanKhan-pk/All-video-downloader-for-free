@@ -22,10 +22,21 @@ DOWNLOAD_ROOT = Path(tempfile.gettempdir()) / "downloads"
 DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-this-secret-key")
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
+app.config["SECRET_KEY"] = os.getenv(
+    "SECRET_KEY",
+    "change-this-secret-key"
+)
 
 ALLOWED_HOSTS = {
-    "youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com",
+    "youtube.com",
+    "www.youtube.com",
+    "youtu.be",
+    "m.youtube.com",
     "tiktok.com", "www.tiktok.com",
     "instagram.com", "www.instagram.com",
     "facebook.com", "www.facebook.com", "fb.watch",
@@ -594,11 +605,6 @@ def ads_txt():
         "ads.txt",
         mimetype="text/plain",
     )
-
-@app.route("/privacy")
-def privacy():
-    return render_template("privacy.html")
-
 
 @app.route("/sitemap.xml")
 def sitemap():
