@@ -186,9 +186,38 @@ def yt_options():
             "deno": {"path": None}
         }
 
-    ffmpeg_path = os.getenv("FFMPEG_PATH") or shutil.which("ffmpeg")
+    ffmpeg_path = (
+        os.getenv("FFMPEG_PATH")
+        or shutil.which("ffmpeg")
+    )
+
     if ffmpeg_path:
-        options["ffmpeg_location"] = str(Path(ffmpeg_path).parent)
+        ffmpeg_path = Path(ffmpeg_path)
+
+        if ffmpeg_path.is_file():
+            options["ffmpeg_location"] = str(
+                ffmpeg_path.parent
+            )
+        else:
+            options["ffmpeg_location"] = str(
+                ffmpeg_path
+            )
+
+    # Cookies were never actually being passed to yt-dlp before, which is
+    # a main cause of "Sign in to confirm you're not a bot" errors.
+    # Set COOKIES_FILE env var to a full path, or just drop a cookies.txt
+    # file next to app.py and it will be picked up automatically.
+    cookies_path = os.getenv("COOKIES_FILE") or str(BASE_DIR / "cookies.txt")
+    if Path(cookies_path).is_file():
+        options["cookiefile"] = cookies_path
+
+    # Fallback player client — helps bypass the bot-check on some requests
+    # even when no cookies file is present.
+    options["extractor_args"] = {
+        "youtube": {
+            "player_client": ["android", "web"],
+        }
+    }
 
     return options
 
@@ -330,7 +359,6 @@ def cleanup_job_files(job):
     except Exception:
         pass
 
-
 def choose_video_format(info, requested_height):
     formats = info.get("formats") or []
 
@@ -342,38 +370,41 @@ def choose_video_format(info, requested_height):
     })
 
     if not available_heights:
-        raise ValueError("No video quality is available for this video.")
-
-    if requested_height > max(available_heights):
         raise ValueError(
-            f"{requested_height}p is not available for this video."
+            "No video quality is available for this video."
         )
 
     lower_or_equal = [
-        height for height in available_heights
+        height
+        for height in available_heights
         if height <= requested_height
     ]
 
-    source_height = (
-        max(lower_or_equal)
-        if lower_or_equal
-        else min(available_heights)
-    )
+    if lower_or_equal:
+        source_height = max(lower_or_equal)
+    else:
+        source_height = min(available_heights)
 
-    # Separate video + audio is intentional:
-    # it prevents silent MP4 files when YouTube provides separate streams.
+    # Prefer MP4 video + M4A audio.
+    # If unavailable, fall back to the best compatible streams.
     video_format = (
         f"bestvideo[height={source_height}][ext=mp4]"
         f"/bestvideo[height={source_height}]"
     )
-    audio_format = "bestaudio[ext=m4a]/bestaudio"
 
-    return (
-        f"{video_format}+{audio_format}"
+    audio_format = (
+        "bestaudio[ext=m4a]"
+        "/bestaudio"
+    )
+
+    merged_format = (
+        f"({video_format})+({audio_format})"
         f"/best[height={source_height}][ext=mp4]"
         f"/best[height={source_height}]"
         f"/best"
-    ), source_height
+    )
+
+    return merged_format, source_height
 
 
 def run_download_job(job_id):
