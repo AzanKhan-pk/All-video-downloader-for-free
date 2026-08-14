@@ -33,17 +33,27 @@ app.config["SECRET_KEY"] = os.getenv(
 )
 
 ALLOWED_HOSTS = {
-    "youtube.com",
-    "www.youtube.com",
-    "youtu.be",
-    "m.youtube.com",
-    "tiktok.com", "www.tiktok.com",
+    "youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com",
+    "tiktok.com", "www.tiktok.com", "vm.tiktok.com",
     "instagram.com", "www.instagram.com",
     "facebook.com", "www.facebook.com", "fb.watch",
     "twitter.com", "www.twitter.com", "x.com", "www.x.com",
+    "snapchat.com", "www.snapchat.com",
+    "netflix.com", "www.netflix.com",
     "box.com", "www.box.com",
     "dailymotion.com", "www.dailymotion.com",
     "soundcloud.com", "www.soundcloud.com",
+    "vimeo.com", "www.vimeo.com",
+    "reddit.com", "www.reddit.com",
+    "twitch.tv", "www.twitch.tv",
+    "pinterest.com", "www.pinterest.com",
+    "linkedin.com", "www.linkedin.com",
+    "tumblr.com", "www.tumblr.com",
+    "streamable.com", "www.streamable.com",
+    "bilibili.com", "www.bilibili.com", "b23.tv",
+    "kick.com", "www.kick.com",
+    "mixcloud.com", "www.mixcloud.com",
+    "archive.org", "www.archive.org",
 }
 
 QUALITY_HEIGHTS = {
