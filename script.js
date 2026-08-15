@@ -25,17 +25,11 @@ function setStatus(message, type = "") {
 }
 
 
-function setButtonLoading(
-  button,
-  loading,
-  loadingText,
-  normalText
-) {
+function setButtonLoading(button, loading, loadingText, normalText) {
   if (!button) return;
 
   button.disabled = loading;
-  button.textContent =
-    loading ? loadingText : normalText;
+  button.textContent = loading ? loadingText : normalText;
 }
 
 
@@ -58,6 +52,81 @@ function escapeHtml(value) {
 
 
 // ==========================================================
+// IOS DETECTION
+// ==========================================================
+
+function isIOSDevice() {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (
+      navigator.platform === "MacIntel" &&
+      navigator.maxTouchPoints > 1
+    )
+  );
+}
+
+
+// ==========================================================
+// DOWNLOAD FILE
+// ==========================================================
+
+async function downloadFileForAllDevices(url, filename) {
+  try {
+    /*
+     * iPhone/iPad Safari has different download behaviour.
+     *
+     * We let Safari handle the generated file directly.
+     * This avoids relying on the HTML download attribute,
+     * which Safari does not always handle like desktop browsers.
+     */
+
+    if (isIOSDevice()) {
+      setStatus(
+        "Your file is ready. Safari is opening the download...",
+        "success"
+      );
+
+      window.location.href = url;
+      return;
+    }
+
+
+    /*
+     * Desktop / Android browsers:
+     * Try normal browser download first.
+     */
+
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = filename;
+    link.rel = "noopener";
+    link.style.display = "none";
+
+    document.body.appendChild(link);
+
+    link.click();
+
+    link.remove();
+
+  } catch (error) {
+
+    console.error(
+      "File download error:",
+      error
+    );
+
+    /*
+     * Final fallback:
+     * Open the file directly.
+     */
+
+    window.location.href = url;
+  }
+}
+
+
+// ==========================================================
 // QUALITY LABEL
 // ==========================================================
 
@@ -69,6 +138,7 @@ function updateQualityLabel() {
   if (selectedMode === "audio") {
     qualityLabel.textContent =
       "192 kbps high quality";
+
     return;
   }
 
@@ -311,6 +381,11 @@ if (fetchButton) {
 
       } catch (error) {
 
+        console.error(
+          "Fetch media error:",
+          error
+        );
+
         if (resultBox) {
           resultBox.hidden = true;
         }
@@ -336,7 +411,7 @@ if (fetchButton) {
 
 
 // ==========================================================
-// DOWNLOAD HELPERS
+// FORMAT BYTES
 // ==========================================================
 
 function formatBytes(bytes) {
@@ -376,6 +451,10 @@ function formatBytes(bytes) {
 }
 
 
+// ==========================================================
+// FORMAT SPEED
+// ==========================================================
+
 function formatSpeed(bytesPerSecond) {
 
   bytesPerSecond =
@@ -395,6 +474,10 @@ function formatSpeed(bytesPerSecond) {
   )}/s`;
 }
 
+
+// ==========================================================
+// FORMAT ETA
+// ==========================================================
 
 function formatEta(seconds) {
 
@@ -533,7 +616,6 @@ function updateDownloadProgress(job) {
     bar.style.width =
       `${safePercent}%`;
 
-    // Smooth movement
     bar.style.transition =
       "width 0.7s ease";
   }
@@ -568,9 +650,9 @@ function updateDownloadProgress(job) {
   }
 
 
-  // --------------------------------------------------------
+  // ========================================================
   // NETWORK ERROR
-  // --------------------------------------------------------
+  // ========================================================
 
   if (
     job.status ===
@@ -602,9 +684,9 @@ function updateDownloadProgress(job) {
   }
 
 
-  // --------------------------------------------------------
+  // ========================================================
   // PAUSED
-  // --------------------------------------------------------
+  // ========================================================
 
   if (
     job.status === "paused"
@@ -634,9 +716,9 @@ function updateDownloadProgress(job) {
   }
 
 
-  // --------------------------------------------------------
+  // ========================================================
   // NORMAL DOWNLOADING
-  // --------------------------------------------------------
+  // ========================================================
 
   if (network) {
     network.hidden = true;
@@ -675,9 +757,9 @@ function updateDownloadProgress(job) {
   }
 
 
-  // --------------------------------------------------------
+  // ========================================================
   // COMPLETED
-  // --------------------------------------------------------
+  // ========================================================
 
   if (
     job.status === "completed"
@@ -739,7 +821,9 @@ async function getDownloadStatus() {
     await fetch(
       `/api/download/${activeDownloadJob}/status`,
       {
-        cache: "no-store"
+        method: "GET",
+        cache: "no-store",
+        credentials: "same-origin"
       }
     );
 
@@ -802,9 +886,9 @@ async function pollDownloadStatus() {
     updateDownloadProgress(job);
 
 
-    // ------------------------------------------------------
+    // ======================================================
     // COMPLETED
-    // ------------------------------------------------------
+    // ======================================================
 
     if (
       job.status ===
@@ -813,26 +897,70 @@ async function pollDownloadStatus() {
 
       stopProgressPolling();
 
-      const link =
-        document.createElement("a");
-
-      link.href =
+      const fileUrl =
         `/api/download/${activeDownloadJob}/file`;
 
-      link.download = "";
+      const filename =
+        selectedMode === "audio"
+          ? "vidloom-audio.mp3"
+          : "vidloom-video.mp4";
 
-      document.body.appendChild(
-        link
-      );
 
-      link.click();
+      /*
+       * iPhone / iPad
+       *
+       * Safari handles the generated file directly.
+       * The server must return it with Content-Disposition:
+       * attachment.
+       */
 
-      link.remove();
+      if (isIOSDevice()) {
 
-      setStatus(
-        "Your download is ready.",
-        "success"
-      );
+        setStatus(
+          "Your file is ready. Opening Safari download...",
+          "success"
+        );
+
+        window.location.href =
+          fileUrl;
+
+      } else {
+
+        /*
+         * Android / Windows / macOS
+         */
+
+        const link =
+          document.createElement("a");
+
+        link.href =
+          fileUrl;
+
+        link.download =
+          filename;
+
+        link.rel =
+          "noopener";
+
+        link.style.display =
+          "none";
+
+        document.body.appendChild(
+          link
+        );
+
+        link.click();
+
+        link.remove();
+
+        setStatus(
+          "Your download is ready.",
+          "success"
+        );
+      }
+
+
+      // Reset download button
 
       const downloadButton =
         $("#downloadBtn");
@@ -855,9 +983,9 @@ async function pollDownloadStatus() {
     }
 
 
-    // ------------------------------------------------------
+    // ======================================================
     // CANCELLED
-    // ------------------------------------------------------
+    // ======================================================
 
     if (
       job.status ===
@@ -871,13 +999,33 @@ async function pollDownloadStatus() {
         "error"
       );
 
+      const downloadButton =
+        $("#downloadBtn");
+
+      if (downloadButton) {
+
+        setButtonLoading(
+          downloadButton,
+          false,
+          "Preparing...",
+          `Download ${
+            selectedMode === "audio"
+              ? "MP3"
+              : "MP4"
+          } ↗`
+        );
+      }
+
+      activeDownloadJob =
+        null;
+
       return;
     }
 
 
-    // ------------------------------------------------------
+    // ======================================================
     // ERROR
-    // ------------------------------------------------------
+    // ======================================================
 
     if (
       job.status === "error"
@@ -912,9 +1060,9 @@ async function pollDownloadStatus() {
     }
 
 
-    // ------------------------------------------------------
+    // ======================================================
     // KEEP POLLING
-    // ------------------------------------------------------
+    // ======================================================
 
     progressTimer =
       setTimeout(
@@ -990,7 +1138,9 @@ async function downloadMedia() {
           body: JSON.stringify({
             url:
               currentVideo.url ||
-              urlInput?.value.trim(),
+              (urlInput
+                ? urlInput.value.trim()
+                : ""),
 
             mode:
               selectedMode,
@@ -1245,6 +1395,9 @@ if (cancelDownloadButton) {
             } ↗`
           );
         }
+
+        activeDownloadJob =
+          null;
 
       } catch (error) {
 
