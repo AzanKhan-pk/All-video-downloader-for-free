@@ -43,27 +43,40 @@ ALLOWED_HOSTS = {
     # YouTube (videos + Shorts)
     "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be",
     "youtube-nocookie.com", "www.youtube-nocookie.com",
+
     # TikTok
     "tiktok.com", "www.tiktok.com", "vm.tiktok.com", "vt.tiktok.com",
+
     # Instagram (public posts, reels)
     "instagram.com", "www.instagram.com",
+
     # Facebook (public videos)
     "facebook.com", "www.facebook.com", "m.facebook.com", "fb.watch",
+
     # X / Twitter (public videos)
     "twitter.com", "www.twitter.com", "x.com", "www.x.com",
+
     # Reddit (public videos)
     "reddit.com", "www.reddit.com", "old.reddit.com", "new.reddit.com",
     "v.redd.it", "redd.it",
+
     # Vimeo
     "vimeo.com", "www.vimeo.com", "player.vimeo.com",
+
     # Dailymotion
     "dailymotion.com", "www.dailymotion.com", "dai.ly",
+
     # Twitch (public clips/videos)
     "twitch.tv", "www.twitch.tv", "m.twitch.tv", "clips.twitch.tv",
+
     # SoundCloud (public audio)
     "soundcloud.com", "www.soundcloud.com", "snd.sc",
+
     # Bilibili
     "bilibili.com", "www.bilibili.com", "b23.tv",
+
+    # Pinterest (public pins)
+    "pinterest.com", "www.pinterest.com", "pin.it",
 }
 
 DOWNLOAD_JOBS = {}
