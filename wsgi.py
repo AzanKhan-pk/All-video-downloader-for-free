@@ -140,8 +140,11 @@ _original_index = app.view_functions["index"]
 
 def enhanced_index():
     response = _original_index()
-    if isinstance(response, str) and "quality-fix.js" not in response:
-        response = response.replace("</body>", '<script src="/static/quality-fix.js?v=7"></script></body>')
+    if isinstance(response, str):
+        if "quality-fix.js" not in response:
+            response = response.replace("</body>", '<script src="/static/quality-fix.js?v=8"></script></body>')
+        if "manual-quality.js" not in response:
+            response = response.replace("</body>", '<script src="/static/manual-quality.js?v=1"></script></body>')
     return response
 
 
