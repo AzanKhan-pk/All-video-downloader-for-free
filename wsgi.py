@@ -1,11 +1,12 @@
 """Production entrypoint for VidLoom.
 
 Keeps the original Flask application intact while adding runtime media-quality
-metadata and the final preview stylesheet bridge.
+metadata and measured download-speed reporting for the new downloader UI.
 """
 from flask import jsonify, request
 
 import app as core
+import runtime_patch
 
 app = core.app
 
@@ -24,11 +25,6 @@ core.QUALITY_HEIGHTS.update({
 
 def _quality_catalog(info):
     formats = info.get("formats") or []
-    heights = sorted({
-        int(f["height"])
-        for f in formats
-        if f.get("height") and f.get("vcodec") not in (None, "none")
-    })
     catalog = []
     for label, height in core.QUALITY_HEIGHTS.items():
         matches = [
@@ -37,16 +33,43 @@ def _quality_catalog(info):
             and f.get("vcodec") not in (None, "none")
         ]
         has_progressive = any(f.get("acodec") not in (None, "none") for f in matches)
+        sizes = [int(f.get("filesize") or f.get("filesize_approx") or 0) for f in matches]
         catalog.append({
             "label": label,
             "height": height,
             "available": bool(matches),
             "has_audio": has_progressive,
-            "filesize": max(
-                [int(f.get("filesize") or f.get("filesize_approx") or 0) for f in matches] or [0]
-            ),
+            "filesize": max(sizes or [0]),
         })
-    return catalog, heights
+    source_heights = sorted({
+        int(f["height"])
+        for f in formats
+        if f.get("height") and f.get("vcodec") not in (None, "none")
+    })
+    return catalog, source_heights
+
+
+def _compact_formats(info):
+    """Expose only quality-level format data to the browser, not raw yt-dlp metadata."""
+    formats = info.get("formats") or []
+    result = []
+    seen = set()
+    for f in formats:
+        height = int(f.get("height") or 0)
+        if height < 144 or f.get("vcodec") in (None, "none"):
+            continue
+        key = (height, f.get("ext"), f.get("acodec") not in (None, "none"))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append({
+            "height": height,
+            "ext": f.get("ext") or "",
+            "vcodec": "video",
+            "acodec": "audio" if f.get("acodec") not in (None, "none") else "none",
+            "filesize": int(f.get("filesize") or f.get("filesize_approx") or 0),
+        })
+    return result
 
 
 def enhanced_api_info():
@@ -68,6 +91,7 @@ def enhanced_api_info():
                 "url": url,
                 "qualities": qualities,
                 "source_heights": source_heights,
+                "formats": _compact_formats(info),
                 "is_live": bool(info.get("is_live")),
             },
         })
@@ -112,6 +136,7 @@ def strict_choose_video_format(info, requested_height):
 
 
 core.choose_video_format = strict_choose_video_format
+runtime_patch.install(core)
 
 # Inject the final bridge after the existing page script without replacing the
 # original template. This preserves the screenshot-style page, SEO and ads.
@@ -121,7 +146,7 @@ _original_index = app.view_functions["index"]
 def enhanced_index():
     response = _original_index()
     if isinstance(response, str) and "quality-fix.js" not in response:
-        tag = '<script src="/static/quality-fix.js?v=3"></script>'
+        tag = '<script src="/static/quality-fix.js?v=4"></script>'
         response = response.replace("</body>", tag + "</body>")
     return response
 
