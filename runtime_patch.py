@@ -2,11 +2,9 @@
 
 Keeps the original Flask/yt-dlp pipeline intact while making progress speed
 come from measured downloaded bytes and elapsed time rather than a fabricated
-number. Also keeps the final reported speed meaningful after completion.
+number. The final reported speed is the measured average transfer speed.
 """
 import time
-
-from yt_dlp.utils import DownloadCancelled as YtDlpStopSignal
 
 
 def install(core):
@@ -18,24 +16,32 @@ def install(core):
 
         def hook(data):
             status = data.get("status")
+
+            # Let the original hook handle pause/cancel and byte totals first.
+            base_hook(data)
+
             if status == "downloading":
                 now = time.monotonic()
                 downloaded = int(data.get("downloaded_bytes") or 0)
                 if started["t"] is None:
                     started["t"] = now
                     started["bytes"] = downloaded
-                else:
-                    elapsed = now - started["t"]
-                    if elapsed > 0.15:
-                        measured = max(0.0, (downloaded - started["bytes"]) / elapsed)
-                        # Keep the measured value in the job; this is bytes/s.
-                        core.update_job(job_id, speed=measured)
+                    return
 
-            base_hook(data)
+                elapsed = now - started["t"]
+                if elapsed > 0.15:
+                    measured = max(0.0, (downloaded - started["bytes"]) / elapsed)
+                    # This value is calculated from actual bytes received by
+                    # yt-dlp and elapsed monotonic time: bytes per second.
+                    core.update_job(job_id, speed=measured)
 
-            if status == "finished":
+            elif status == "finished":
                 job = core.get_job(job_id) or {}
-                downloaded = int(data.get("downloaded_bytes") or job.get("downloaded_bytes") or 0)
+                downloaded = int(
+                    data.get("downloaded_bytes")
+                    or job.get("downloaded_bytes")
+                    or 0
+                )
                 elapsed = (time.monotonic() - started["t"]) if started["t"] else 0
                 average = (downloaded / elapsed) if elapsed > 0 else 0.0
                 core.update_job(job_id, average_speed=average, speed=average)
