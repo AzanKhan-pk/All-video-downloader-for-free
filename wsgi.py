@@ -1,7 +1,7 @@
 """Production entrypoint for VidLoom.
 
-This wrapper keeps the original Flask application intact while adding the
-runtime media-quality metadata needed by the new downloader UI.
+Keeps the original Flask application intact while adding runtime media-quality
+metadata and the final preview stylesheet bridge.
 """
 from flask import jsonify, request
 
@@ -9,8 +9,6 @@ import app as core
 
 app = core.app
 
-# Standard choices shown in the UI. Availability is decided from the actual
-# formats exposed by yt-dlp; unavailable choices are never silently downgraded.
 core.QUALITY_HEIGHTS.clear()
 core.QUALITY_HEIGHTS.update({
     "144p": 144,
@@ -33,13 +31,20 @@ def _quality_catalog(info):
     })
     catalog = []
     for label, height in core.QUALITY_HEIGHTS.items():
-        matches = [f for f in formats if f.get("height") == height and f.get("vcodec") not in (None, "none")]
+        matches = [
+            f for f in formats
+            if f.get("height") == height
+            and f.get("vcodec") not in (None, "none")
+        ]
         has_progressive = any(f.get("acodec") not in (None, "none") for f in matches)
         catalog.append({
             "label": label,
             "height": height,
             "available": bool(matches),
             "has_audio": has_progressive,
+            "filesize": max(
+                [int(f.get("filesize") or f.get("filesize_approx") or 0) for f in matches] or [0]
+            ),
         })
     return catalog, heights
 
@@ -71,8 +76,6 @@ def enhanced_api_info():
         return jsonify({"ok": False, "error": core.humanize_error(error)}), 400
 
 
-# Replace only the view function registered by Flask; all other original
-# routes and download-job logic remain untouched.
 app.view_functions["api_info"] = enhanced_api_info
 
 
@@ -88,7 +91,6 @@ def strict_choose_video_format(info, requested_height):
             f"The quality you selected ({requested_height}p) is not available. Select another quality."
         )
 
-    # Prefer MP4, then the highest-quality exact-height video stream.
     exact.sort(key=lambda f: (
         f.get("ext") == "mp4",
         f.get("acodec") not in (None, "none"),
@@ -110,3 +112,18 @@ def strict_choose_video_format(info, requested_height):
 
 
 core.choose_video_format = strict_choose_video_format
+
+# Inject the final bridge after the existing page script without replacing the
+# original template. This preserves the screenshot-style page, SEO and ads.
+_original_index = app.view_functions["index"]
+
+
+def enhanced_index():
+    response = _original_index()
+    if isinstance(response, str) and "quality-fix.js" not in response:
+        tag = '<script src="/static/quality-fix.js?v=3"></script>'
+        response = response.replace("</body>", tag + "</body>")
+    return response
+
+
+app.view_functions["index"] = enhanced_index
