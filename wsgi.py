@@ -29,16 +29,16 @@ def _quality_catalog(info):
     for label, height in core.QUALITY_HEIGHTS.items():
         matches = [
             f for f in formats
-            if f.get("height") == height
+            if int(f.get("height") or 0) == height
             and f.get("vcodec") not in (None, "none")
         ]
-        has_progressive = any(f.get("acodec") not in (None, "none") for f in matches)
+        has_audio = any(f.get("acodec") not in (None, "none") for f in matches)
         sizes = [int(f.get("filesize") or f.get("filesize_approx") or 0) for f in matches]
         catalog.append({
             "label": label,
             "height": height,
             "available": bool(matches),
-            "has_audio": has_progressive,
+            "has_audio": has_audio,
             "filesize": max(sizes or [0]),
         })
     source_heights = sorted({
@@ -50,7 +50,6 @@ def _quality_catalog(info):
 
 
 def _compact_formats(info):
-    """Expose only quality-level format data to the browser, not raw yt-dlp metadata."""
     formats = info.get("formats") or []
     result = []
     seen = set()
@@ -107,7 +106,7 @@ def strict_choose_video_format(info, requested_height):
     formats = info.get("formats") or []
     exact = [
         f for f in formats
-        if f.get("height") == requested_height
+        if int(f.get("height") or 0) == requested_height
         and f.get("vcodec") not in (None, "none")
     ]
     if not exact:
@@ -115,13 +114,11 @@ def strict_choose_video_format(info, requested_height):
             f"The quality you selected ({requested_height}p) is not available. Select another quality."
         )
 
-    exact.sort(key=lambda f: (
+    progressive = [f for f in exact if f.get("acodec") not in (None, "none")]
+    progressive.sort(key=lambda f: (
         f.get("ext") == "mp4",
-        f.get("acodec") not in (None, "none"),
         float(f.get("tbr") or 0),
     ), reverse=True)
-
-    progressive = [f for f in exact if f.get("acodec") not in (None, "none")]
     if progressive:
         ext = "mp4" if any(f.get("ext") == "mp4" for f in progressive) else progressive[0].get("ext")
         return f"best[height={requested_height}][ext={ext}]/best[height={requested_height}]", requested_height
@@ -138,16 +135,13 @@ def strict_choose_video_format(info, requested_height):
 core.choose_video_format = strict_choose_video_format
 runtime_patch.install(core)
 
-# Inject the final bridge after the existing page script without replacing the
-# original template. This preserves the screenshot-style page, SEO and ads.
 _original_index = app.view_functions["index"]
 
 
 def enhanced_index():
     response = _original_index()
     if isinstance(response, str) and "quality-fix.js" not in response:
-        tag = '<script src="/static/quality-fix.js?v=4"></script>'
-        response = response.replace("</body>", tag + "</body>")
+        response = response.replace("</body>", '<script src="/static/quality-fix.js?v=7"></script></body>')
     return response
 
 
