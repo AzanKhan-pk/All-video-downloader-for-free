@@ -48,7 +48,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --upgrade buildozer cython
       - name: Build APK with Buildozer
-        run: buildozer -v android debug
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+        run: |
+          set -e
+          export PATH="$JAVA_HOME/bin:$PATH"
+          buildozer -v android debug
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
