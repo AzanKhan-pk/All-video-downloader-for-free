@@ -195,7 +195,8 @@ def enhanced_index():
         )
         response = response.replace(
             "</body>",
-            '<script src="/static/quality-final.js?v=2"></script></body>'
+            '<script src="/static/quality-final.js?v=3"></script>'
+            '<script src="/static/quality-bridge.js?v=1"></script></body>'
         )
     return response
 
