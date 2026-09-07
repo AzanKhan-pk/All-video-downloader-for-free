@@ -1,4 +1,2 @@
 Flask>=3.0,<4
-requests>=2.31,<3
-gunicorn>=21,<24
-yt-dlp>=2024.12.6
+yt-dlp>=2026.7.4,<2027
