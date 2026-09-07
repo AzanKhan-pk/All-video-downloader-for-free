@@ -23,7 +23,11 @@ def _quality_catalog(info):
     formats = info.get("formats") or []
     catalog = []
     for label, height in core.QUALITY_HEIGHTS.items():
-        matches = [f for f in formats if int(f.get("height") or 0) == height and f.get("vcodec") not in (None, "none")]
+        matches = [
+            f for f in formats
+            if int(f.get("height") or 0) == height
+            and f.get("vcodec") not in (None, "none")
+        ]
         sizes = [int(f.get("filesize") or f.get("filesize_approx") or 0) for f in matches]
         catalog.append({
             "label": label,
@@ -32,7 +36,11 @@ def _quality_catalog(info):
             "has_audio": any(f.get("acodec") not in (None, "none") for f in matches),
             "filesize": max(sizes or [0]),
         })
-    source_heights = sorted({int(f["height"]) for f in formats if f.get("height") and f.get("vcodec") not in (None, "none")})
+    source_heights = sorted({
+        int(f["height"])
+        for f in formats
+        if f.get("height") and f.get("vcodec") not in (None, "none")
+    })
     return catalog, source_heights
 
 
@@ -84,19 +92,70 @@ def enhanced_api_info():
 app.view_functions["api_info"] = enhanced_api_info
 
 
+@app.post("/api/quality-info")
+def quality_info():
+    """Dedicated quality endpoint. It performs a fresh yt-dlp metadata
+    extraction and returns the raw height/codec information needed by the
+    manual selector. This avoids depending on any frontend script's shape
+    of /api/info and prevents a generic fallback message from being used."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        url = core.clean_url(payload.get("url", ""))
+        info = core.get_media_info(url)
+        qualities, source_heights = _quality_catalog(info)
+        formats = []
+        for f in info.get("formats") or []:
+            h = int(f.get("height") or 0)
+            if h < 144 or f.get("vcodec") in (None, "none"):
+                continue
+            formats.append({
+                "format_id": str(f.get("format_id") or ""),
+                "height": h,
+                "ext": f.get("ext") or "",
+                "has_video": True,
+                "has_audio": f.get("acodec") not in (None, "none"),
+                "filesize": int(f.get("filesize") or f.get("filesize_approx") or 0),
+            })
+        return jsonify({
+            "ok": True,
+            "url": url,
+            "title": info.get("title") or "Untitled media",
+            "qualities": qualities,
+            "source_heights": source_heights,
+            "formats": formats,
+        })
+    except Exception as error:
+        core.app.logger.warning("Quality info error: %s", error)
+        return jsonify({"ok": False, "error": core.humanize_error(error)}), 400
+
+
 def strict_choose_video_format(info, requested_height):
     formats = info.get("formats") or []
-    exact = [f for f in formats if int(f.get("height") or 0) == requested_height and f.get("vcodec") not in (None, "none")]
+    exact = [
+        f for f in formats
+        if int(f.get("height") or 0) == requested_height
+        and f.get("vcodec") not in (None, "none")
+    ]
     if not exact:
-        raise ValueError(f"The quality you selected ({requested_height}p) is not available. Select another quality.")
+        raise ValueError(
+            f"The quality you selected ({requested_height}p) is not available. Select another quality."
+        )
     progressive = [f for f in exact if f.get("acodec") not in (None, "none")]
-    progressive.sort(key=lambda f: (f.get("ext") == "mp4", float(f.get("tbr") or 0)), reverse=True)
+    progressive.sort(
+        key=lambda f: (f.get("ext") == "mp4", float(f.get("tbr") or 0)),
+        reverse=True,
+    )
     if progressive:
         ext = "mp4" if any(f.get("ext") == "mp4" for f in progressive) else progressive[0].get("ext")
         return f"best[height={requested_height}][ext={ext}]/best[height={requested_height}]", requested_height
     if not core.FFMPEG_AVAILABLE:
-        raise RuntimeError("This quality has separate video/audio streams and FFmpeg is required to merge them.")
-    return f"bestvideo[height={requested_height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height={requested_height}]+bestaudio", requested_height
+        raise RuntimeError(
+            "This quality has separate video/audio streams and FFmpeg is required to merge them."
+        )
+    return (
+        f"bestvideo[height={requested_height}][ext=mp4]+bestaudio[ext=m4a]/"
+        f"bestvideo[height={requested_height}]+bestaudio"
+    ), requested_height
 
 
 core.choose_video_format = strict_choose_video_format
@@ -108,11 +167,16 @@ _original_index = app.view_functions["index"]
 def enhanced_index():
     response = _original_index()
     if isinstance(response, str):
-        # Use only one quality controller. Older controllers conflicted with
-        # each other and could leave the old fallback text visible.
         import re
-        response = re.sub(r'<script[^>]+/static/(?:quality-fix|manual-quality|quality-ui-v2)\.js[^>]*></script>', '', response)
-        response = response.replace("</body>", '<script src="/static/quality-fix.js?v=9"></script></body>')
+        response = re.sub(
+            r'<script[^>]+/static/(?:quality-fix|manual-quality|quality-ui-v2)\\.js[^>]*></script>',
+            '',
+            response,
+        )
+        response = response.replace(
+            "</body>",
+            '<script src="/static/quality-final.js?v=1"></script></body>'
+        )
     return response
 
 
