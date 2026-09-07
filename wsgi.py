@@ -145,6 +145,8 @@ def enhanced_index():
             response = response.replace("</body>", '<script src="/static/quality-fix.js?v=8"></script></body>')
         if "manual-quality.js" not in response:
             response = response.replace("</body>", '<script src="/static/manual-quality.js?v=1"></script></body>')
+        if "quality-ui-v2.js" not in response:
+            response = response.replace("</body>", '<script src="/static/quality-ui-v2.js?v=1"></script></body>')
     return response
 
 
