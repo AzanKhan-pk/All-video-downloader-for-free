@@ -1,45 +1,114 @@
 (() => {
   'use strict';
-  const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-  const urlInput=$('#url'),fetchBtn=$('#fetchBtn'),statusBox=$('#status'),resultBox=$('#result');
-  let currentVideo=null,selectedMode='video',selectedQuality='720p',currentJobId=null,deferredInstall=null;
-  const sites=[['YouTube','https://www.youtube.com/','▶'],['TikTok','https://www.tiktok.com/','♪'],['Instagram','https://www.instagram.com/','◎'],['Facebook','https://www.facebook.com/','f'],['X','https://x.com/','𝕏'],['Reddit','https://www.reddit.com/','●'],['Vimeo','https://vimeo.com/','V'],['Pinterest','https://www.pinterest.com/','P'],['Twitch','https://www.twitch.tv/','▣']];
-  const css=`
-  .hero,#downloader{display:none!important}
-  #vidloom-workspace{width:min(1280px,calc(100% - 2*var(--space)));margin:28px auto 90px;position:relative}
-  .vl-urlbar{display:flex;align-items:center;gap:10px;padding:7px 8px 7px 16px;border:1px solid #326cff;border-radius:18px;background:rgba(5,10,28,.94);box-shadow:0 0 28px rgba(61,90,255,.14),inset 0 0 20px rgba(30,50,140,.08)}
-  .vl-urlbar .vl-link{color:#a9b8ff;font-size:19px}.vl-urlbar input{padding:10px 4px;min-width:0}.vl-go{padding:13px 25px!important;border-radius:10px!important;background:linear-gradient(100deg,#5a25ff,#1677ff)!important;color:white!important;border:0!important;box-shadow:0 5px 18px rgba(61,71,255,.28)}
-  .vl-sites{display:grid;grid-template-columns:repeat(9,1fr);gap:13px;margin:20px 0 26px}.vl-site{border:0;background:transparent;color:var(--ink);cursor:pointer;text-align:center}.vl-site .vl-site-icon{width:48px;height:48px;margin:auto;display:grid;place-items:center;border-radius:13px;background:linear-gradient(145deg,#101a38,#1d2850);border:1px solid #273c78;box-shadow:0 0 20px rgba(57,92,255,.13);font-size:22px;font-weight:800}.vl-site:hover .vl-site-icon{border-color:#6b66ff;transform:translateY(-2px)}.vl-site span{display:block;margin-top:7px;font-size:11px;color:#c7cbe0}
-  .vl-work{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:14px}.vl-browser{min-height:560px;border:1px solid #203d87;border-radius:15px;background:#050b20;box-shadow:0 0 35px rgba(22,69,190,.12);overflow:hidden}.vl-browser-top{display:flex;gap:9px;padding:12px;border-bottom:1px solid #1b2b56;background:#080f25}.vl-browser-top select{width:auto;padding:9px 30px 9px 12px;border:1px solid #283e76;border-radius:9px;background:#0b1430;color:#eaf0ff}.vl-browser-search{display:flex;flex:1;gap:7px}.vl-browser-search input{padding:9px 12px;border:1px solid #283e76;border-radius:9px;background:#060b1d}.vl-browser-search button{padding:0 15px;border-radius:9px;background:#172d69;color:#dfe7ff;cursor:pointer}.vl-preview{min-height:480px;padding:18px;display:grid;place-items:center;background:radial-gradient(circle at 50% 20%,rgba(48,69,160,.18),transparent 45%),#040817}.vl-preview iframe{width:100%;height:430px;border:1px solid #233c78;border-radius:10px;background:#000}.vl-preview-card{width:100%;height:430px;position:relative;border-radius:10px;overflow:hidden;border:1px solid #233c78;background:#0a1024}.vl-preview-card img{width:100%;height:100%;object-fit:cover;opacity:.72}.vl-preview-card:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 42%,rgba(0,0,0,.86))}.vl-preview-info{position:absolute;z-index:2;left:20px;right:20px;bottom:18px}.vl-preview-info h3{margin:0 0 7px;font-size:20px}.vl-preview-info p{margin:0;color:#b5bdd3;font-size:12px}.vl-empty{color:#7784a8;text-align:center;padding:70px 25px}.vl-empty strong{display:block;color:#e9edff;font-size:21px;margin-bottom:7px}
-  .vl-download{border:1px solid #293b75;border-radius:15px;background:linear-gradient(180deg,#07102a,#05091a);padding:17px;box-shadow:0 0 30px rgba(72,43,255,.08)}.vl-download h3{margin:0 0 16px;font-size:18px}.vl-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}.vl-tab{padding:11px;border:1px solid #253b72;border-radius:9px;background:#07112b;color:#adb9d6;cursor:pointer}.vl-tab.active{background:linear-gradient(100deg,#5521ff,#146eff);border-color:#6e62ff;color:white}.vl-quality-head{display:flex;justify-content:space-between;align-items:center;margin:20px 0 9px;font-size:12px}.vl-quality-head span{color:#48c8ff}.vl-quality-list{display:grid;gap:7px;max-height:300px;overflow:auto}.vl-quality{display:flex;justify-content:space-between;align-items:center;padding:10px 11px;border:1px solid #25355f;border-radius:8px;background:#080f23;color:#e5eaff;cursor:pointer}.vl-quality:hover{border-color:#546eff}.vl-quality.selected{border-color:#5274ff;background:linear-gradient(90deg,rgba(67,45,255,.3),rgba(18,80,210,.2));box-shadow:0 0 16px rgba(65,75,255,.13)}.vl-quality.unavailable{opacity:.38;cursor:not-allowed}.vl-quality small{color:#8794b6}.vl-alert{margin-top:10px;padding:10px;border:1px solid #8b36c8;border-radius:8px;background:rgba(107,35,154,.12);color:#d9baff;font-size:11px;line-height:1.5}.vl-download-btn{width:100%;margin-top:15px;padding:14px;border:0;border-radius:10px;background:linear-gradient(100deg,#7a21ff,#0788ff);color:#fff;font-weight:800;cursor:pointer;box-shadow:0 7px 25px rgba(62,55,255,.25)}.vl-download-btn:disabled{opacity:.55;cursor:wait}.vl-meta{margin-top:13px;color:#7f8aaa;font-size:11px;line-height:1.6}.vl-progress{margin-top:14px;padding:13px;border:1px solid #263b6c;border-radius:10px;background:#060d20}.vl-progress-head,.vl-progress-stats{display:flex;justify-content:space-between;gap:10px}.vl-progress-head{font-size:12px}.vl-progress-stats{margin-top:8px;color:#8e9ab8;font-size:10px}.vl-track{height:7px;margin-top:10px;border-radius:99px;background:#111d3c;overflow:hidden}.vl-fill{height:100%;width:0;background:linear-gradient(90deg,#5b25ff,#16a5ff);box-shadow:0 0 12px #477dff;transition:width .25s ease}.vl-progress-actions{display:flex;gap:7px;margin-top:10px}.vl-progress-actions button{flex:1;padding:8px;border:1px solid #2b4177;border-radius:7px;background:#0b1530;color:#dce5ff;cursor:pointer;font-size:11px}.vl-progress-actions .cancel{color:#ff9d9d}.vl-notice{margin-top:10px;color:#7785a5;font-size:10px;line-height:1.5}
-  @media(max-width:900px){.vl-sites{grid-template-columns:repeat(5,1fr)}.vl-work{grid-template-columns:1fr}.vl-browser{min-height:430px}.vl-preview{min-height:350px}.vl-preview iframe,.vl-preview-card{height:330px}}
-  @media(max-width:560px){#vidloom-workspace{width:calc(100% - 24px)}.vl-sites{grid-template-columns:repeat(3,1fr)}.vl-urlbar{flex-wrap:wrap}.vl-urlbar input{flex-basis:calc(100% - 35px)}.vl-go{margin-left:auto}.vl-preview iframe,.vl-preview-card{height:250px}}
+  const $ = (s, r = document) => r.querySelector(s);
+  let media = null;
+  let mode = 'video';
+  let quality = '720p';
+
+  const style = document.createElement('style');
+  style.textContent = `
+    #downloader { display:none!important }
+    #vidloom-app { max-width:1180px; margin:35px auto 80px; padding:0 18px; font-family:Manrope,system-ui,sans-serif }
+    .vl-card { background:#070d20; border:1px solid #263b73; border-radius:18px; padding:22px; box-shadow:0 18px 55px rgba(0,0,0,.22) }
+    .vl-title { font-size:30px; font-weight:800; margin:0 0 8px; color:#fff }
+    .vl-sub { color:#9da9c8; margin:0 0 22px }
+    .vl-form { display:flex; gap:10px }
+    .vl-form input { flex:1; min-width:0; padding:15px 16px; border-radius:11px; border:1px solid #30477f; background:#050a18; color:#fff; outline:none }
+    .vl-btn { border:0; border-radius:11px; padding:0 22px; background:linear-gradient(100deg,#6424ff,#087fff); color:#fff; font-weight:800; cursor:pointer }
+    .vl-btn:disabled { opacity:.55; cursor:wait }
+    .vl-result { margin-top:18px; display:none; grid-template-columns:1fr 330px; gap:18px }
+    .vl-preview { overflow:hidden; border-radius:13px; border:1px solid #263b73; background:#030714 }
+    .vl-preview img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block }
+    .vl-info { padding:15px }
+    .vl-info h3 { color:#fff; margin:0 0 7px; font-size:19px }
+    .vl-info p { color:#9da9c8; margin:4px 0; font-size:12px }
+    .vl-controls { border:1px solid #263b73; border-radius:13px; padding:17px; background:#060c1d }
+    .vl-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:15px }
+    .vl-tab { padding:11px; border-radius:9px; border:1px solid #2a4077; background:#0a1229; color:#b9c4df; cursor:pointer }
+    .vl-tab.active { background:#5224e9; color:#fff; border-color:#6b56ff }
+    .vl-controls label { display:block; color:#9da9c8; font-size:12px; margin:12px 0 7px }
+    .vl-controls select { width:100%; padding:11px; border-radius:9px; border:1px solid #2a4077; background:#0a1229; color:#fff }
+    .vl-download { width:100%; padding:13px; margin-top:15px }
+    .vl-status { margin-top:14px; min-height:20px; color:#9da9c8; font-size:12px }
+    .vl-status.error { color:#ff9c9c } .vl-status.ok { color:#7ee2b0 }
+    .vl-note { margin-top:12px; color:#7583a5; font-size:11px; line-height:1.5 }
+    @media(max-width:800px){ .vl-result{grid-template-columns:1fr} .vl-form{flex-direction:column}.vl-btn{padding:13px} }
   `;
-  function addStyle(){if($('#vidloom-preview-style'))return;const s=document.createElement('style');s.id='vidloom-preview-style';s.textContent=css;document.head.appendChild(s)}
-  function esc(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
-  function bytes(n){n=Number(n||0);if(!n)return'0 B';const u=['B','KB','MB','GB','TB'],i=Math.min(Math.floor(Math.log(n)/Math.log(1024)),u.length-1);return`${(n/Math.pow(1024,i)).toFixed(i?2:0)} ${u[i]}`}
-  function eta(n){n=Number(n);if(!Number.isFinite(n)||n<0)return'ETA —';if(n<60)return`ETA ${Math.ceil(n)}s`;return`ETA ${Math.floor(n/60)}m ${Math.ceil(n%60)}s`}
-  function setStatus(text,type=''){if(statusBox){statusBox.textContent=text;statusBox.className=`status ${type}`.trim()}}
-  function youtubeId(url){try{const u=new URL(url);if(u.hostname.includes('youtu.be'))return u.pathname.slice(1).split('/')[0];if(u.hostname.includes('youtube.com'))return u.searchParams.get('v')||u.pathname.split('/').filter(Boolean).pop()}catch(e){}return null}
-  function qualities(video){const out=new Map(),formats=Array.isArray(video?.formats)?video.formats:[];formats.forEach(f=>{const h=Number(f.height||0);if(h>=144){const label=h>=2160?'4K':`${h}p`,size=Number(f.filesize||f.filesize_approx||0),hasVideo=f.vcodec&&f.vcodec!=='none';if(hasVideo)out.set(h,{h,label,size})}});if(Array.isArray(video?.available_qualities))video.available_qualities.forEach(q=>{const m=String(q).match(/(\d{3,4})/);if(m){const h=Number(m[1]);out.set(h,{h,label:h>=2160?'4K':`${h}p`,size:0})}});return[...out.values()].sort((a,b)=>b.h-a.h)}
-  function buildWorkspace(){if($('#vidloom-workspace'))return;const wrap=document.createElement('section');wrap.id='vidloom-workspace';wrap.innerHTML=`<div class="vl-urlbar"><span class="vl-link">↗</span><input id="vlAddress" type="text" placeholder="Search or enter a video website URL…" autocomplete="off"><button class="vl-go" id="vlGo" type="button">Go →</button></div><div class="vl-sites" id="vlSites"></div><div class="vl-work"><div class="vl-browser"><div class="vl-browser-top"><select id="vlSiteSelect" aria-label="Platform"><option>YouTube</option><option>TikTok</option><option>Instagram</option><option>Facebook</option><option>X</option><option>Reddit</option><option>Vimeo</option><option>Pinterest</option><option>Twitch</option></select><div class="vl-browser-search"><input id="vlInnerSearch" placeholder="Search or paste a public media URL…"><button id="vlInnerGo" type="button">Search</button></div></div><div class="vl-preview" id="vlPreview"><div class="vl-empty"><strong>Choose a platform or paste a video URL</strong>The media preview and download controls will appear here after a public URL is fetched.</div></div></div><aside class="vl-download" id="vlDownload"><h3>Download Video</h3><div class="vl-tabs"><button class="vl-tab active" data-mode="video" type="button">▣ Video</button><button class="vl-tab" data-mode="audio" type="button">♫ Audio</button></div><div class="vl-quality-head"><b>Select Quality</b><span>Real available qualities</span></div><div class="vl-quality-list" id="vlQualities"><div class="vl-empty" style="padding:25px 5px;font-size:12px">Fetch media to see the real source qualities.</div></div><div class="vl-alert">Only qualities exposed by the source are offered. If a quality is unavailable, select another quality.</div><button class="vl-download-btn" id="vlDownloadBtn" type="button" disabled>⇩ Download</button><div class="vl-meta" id="vlMeta">No media selected.</div><div id="vlProgress"></div></aside></div><div class="vl-notice">VidLoom works with public media that the supported extractor can access. Login-required and DRM-protected media are not bypassed.</div>`;
-    const header=$('.site-header');if(header)header.insertAdjacentElement('afterend',wrap);else document.body.prepend(wrap);
-    const sitesEl=$('#vlSites');sites.forEach(([name,href,icon])=>{const b=document.createElement('button');b.className='vl-site';b.type='button';b.innerHTML=`<span class="vl-site-icon">${esc(icon)}</span><span>${esc(name)}</span>`;b.onclick=()=>{$('#vlAddress').value=href;$('#vlInnerSearch').value=href;openPreview(href,name)};sitesEl.appendChild(b)});
-    $('#vlGo').onclick=()=>handleAddress($('#vlAddress').value);$('#vlAddress').onkeydown=e=>{if(e.key==='Enter')handleAddress(e.target.value)};$('#vlInnerGo').onclick=()=>handleAddress($('#vlInnerSearch').value);$('#vlInnerSearch').onkeydown=e=>{if(e.key==='Enter')handleAddress(e.target.value)};
-    $$('.vl-tab').forEach(b=>b.onclick=()=>{$$('.vl-tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');selectedMode=b.dataset.mode;if(currentVideo)renderDownloadPanel(currentVideo)});
-    $$('a[href="#downloader"]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();wrap.scrollIntoView({behavior:'smooth'});}));
+  document.head.appendChild(style);
+
+  const app = document.createElement('section');
+  app.id = 'vidloom-app';
+  app.innerHTML = `
+    <div class="vl-card">
+      <h2 class="vl-title">VidLoom Video Downloader</h2>
+      <p class="vl-sub">Download public media from supported websites. No login or DRM bypass.</p>
+      <div class="vl-form"><input id="vl-url" type="url" placeholder="Paste a public video URL…" autocomplete="off"><button id="vl-fetch" class="vl-btn">Fetch media</button></div>
+      <div id="vl-status" class="vl-status"></div>
+      <div id="vl-result" class="vl-result">
+        <div class="vl-preview"><img id="vl-thumb" alt="Media thumbnail"><div class="vl-info"><h3 id="vl-title"></h3><p id="vl-meta"></p></div></div>
+        <div class="vl-controls">
+          <div class="vl-tabs"><button class="vl-tab active" data-mode="video">Video</button><button class="vl-tab" data-mode="audio">Audio</button></div>
+          <label for="vl-quality">Quality</label><select id="vl-quality"></select>
+          <button id="vl-download" class="vl-btn vl-download">Download</button>
+          <div class="vl-note">Vercel's free serverless environment cannot keep a background download running. This version downloads in the same request and avoids server-side FFmpeg merging.</div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(app);
+
+  const input = $('#vl-url'), fetchBtn = $('#vl-fetch'), status = $('#vl-status'), result = $('#vl-result');
+  const qualitySelect = $('#vl-quality'), downloadBtn = $('#vl-download');
+
+  function setStatus(text, type='') { status.textContent = text; status.className = `vl-status ${type}`; }
+  function esc(s) { return String(s || '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function renderQualities() {
+    const qs = Array.isArray(media?.available_qualities) ? media.available_qualities : [];
+    qualitySelect.innerHTML = '';
+    const values = qs.length ? qs : ['360p','480p','720p','1080p'];
+    values.forEach(q => { const o = document.createElement('option'); o.value=q; o.textContent=q; qualitySelect.appendChild(o); });
+    quality = values.includes('720p') ? '720p' : values[0]; qualitySelect.value = quality;
+    qualitySelect.disabled = mode === 'audio';
   }
-  function openPreview(raw,name=''){let value=String(raw||'').trim();if(!value)return;if(!/^https?:\/\//i.test(value))value=/^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(value)?`https://${value}`:`https://www.google.com/search?q=${encodeURIComponent(value)}`;const p=$('#vlPreview'),id=youtubeId(value);if(id)p.innerHTML=`<iframe title="YouTube preview" src="https://www.youtube.com/embed/${encodeURIComponent(id)}?rel=0&modestbranding=1" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;else p.innerHTML=`<div class="vl-preview-card"><div class="vl-empty" style="position:absolute;inset:0;z-index:3;display:grid;place-items:center"><div><strong>${esc(name||'Public media page')}</strong><p>This platform may block embedded playback. Fetch the URL to load its metadata and download options.</p></div></div></div>`;$('#vlInnerSearch').value=value}
-  async function handleAddress(raw){const value=String(raw||'').trim();if(!value)return;openPreview(value);if(/^https?:\/\//i.test(value)&&!/google\.com\/search/i.test(value)){urlInput.value=value;await fetchMedia(value)}}
-  async function fetchMedia(explicitUrl){const url=String(explicitUrl||urlInput?.value||'').trim();if(!url){setStatus('Paste a public video URL first.','error');return}if(fetchBtn){fetchBtn.disabled=true;fetchBtn.textContent='Reading...'}setStatus('Reading public media details...');try{const r=await fetch('/api/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Could not read this media.');currentVideo=d.video||d;renderWorkspaceMedia(currentVideo,url);if(resultBox)resultBox.hidden=true;setStatus(`${currentVideo.platform||'Media'} found. Select an available quality and download.`,'success')}catch(e){currentVideo=null;renderDownloadPanel(null);setStatus(e.message||'Could not read this link.','error')}finally{if(fetchBtn){fetchBtn.disabled=false;fetchBtn.textContent='Fetch media ↗'}}}
-  function renderWorkspaceMedia(video,url){const p=$('#vlPreview'),id=youtubeId(url||video?.webpage_url||video?.url||'');if(id)p.innerHTML=`<iframe title="Media preview" src="https://www.youtube.com/embed/${encodeURIComponent(id)}?rel=0&modestbranding=1" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;else if(video?.thumbnail)p.innerHTML=`<div class="vl-preview-card"><img src="${esc(video.thumbnail)}" alt="Media thumbnail"><div class="vl-preview-info"><h3>${esc(video.title||'Media')}</h3><p>${esc(video.platform||'Supported platform')} · ${esc(video.duration||'Duration unavailable')}</p></div></div>`;else openPreview(url,video?.platform||'Media');renderDownloadPanel(video)}
-  function renderDownloadPanel(video){const qEl=$('#vlQualities'),btn=$('#vlDownloadBtn'),meta=$('#vlMeta');if(!qEl||!btn)return;if(!video){qEl.innerHTML='<div class="vl-empty" style="padding:25px 5px;font-size:12px">Fetch media to see the real source qualities.</div>';btn.disabled=true;meta.textContent='No media selected.';return}const qs=qualities(video),wanted=[2160,1440,1080,720,480,360,240,144],sourceHeights=qs.map(x=>x.h),all=[...new Set([...wanted,...sourceHeights])].sort((a,b)=>b-a);if(!sourceHeights.length){qEl.innerHTML='<div class="vl-empty" style="padding:25px 5px;font-size:12px">The source did not expose a detailed quality list. The server will use its safe best available fallback.</div>';selectedQuality='720p'}else{qEl.innerHTML=all.map(h=>{const available=sourceHeights.includes(h),label=h>=2160?'4K':`${h}p`,f=qs.find(x=>x.h===h);return`<button type="button" class="vl-quality ${available?'':'unavailable'} ${available&&label===selectedQuality?'selected':''}" data-quality="${label}" ${available?'':'disabled'}><span>◉ ${label}</span><small>${available?(f.size?bytes(f.size):'Available'):'Not available'}</small></button>`}).join('');if(!sourceHeights.includes(parseInt(selectedQuality))){const fallback=sourceHeights.find(h=>h<=720)||sourceHeights[sourceHeights.length-1];selectedQuality=fallback>=2160?'4K':`${fallback}p`}$$('.vl-quality').forEach(b=>b.onclick=()=>{$$('.vl-quality').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');selectedQuality=b.dataset.quality})}meta.textContent=`${video.title||'Media'} · ${video.platform||'Supported platform'} · ${video.duration||'Duration unavailable'}`;btn.disabled=false;btn.textContent=`⇩ Download ${selectedMode==='audio'?'MP3':'MP4'}`;btn.onclick=startDownload}
-  function progressPanel(){const host=$('#vlProgress');if(!host)return;host.innerHTML=`<div class="vl-progress"><div class="vl-progress-head"><b id="vlProgressTitle">Preparing download...</b><b id="vlProgressPct">0%</b></div><div class="vl-track"><div id="vlFill" class="vl-fill"></div></div><div class="vl-progress-stats"><span id="vlAmount">0 B / —</span><span id="vlSpeed">—</span><span id="vlEta">ETA —</span></div><div class="vl-progress-actions"><button id="vlPause" type="button">Pause</button><button id="vlResume" type="button" hidden>Resume</button><button id="vlCancel" class="cancel" type="button">Cancel</button></div><div id="vlProgressMsg" class="vl-notice">Preparing...</div></div>`;$('#vlPause').onclick=()=>jobControl('pause');$('#vlResume').onclick=()=>jobControl('resume');$('#vlCancel').onclick=()=>jobControl('cancel')}
-  async function startDownload(){if(!currentVideo){setStatus('Fetch media details first.','error');return}const b=$('#vlDownloadBtn');b.disabled=true;b.textContent='Starting...';progressPanel();try{const r=await fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:currentVideo.url||currentVideo.webpage_url||urlInput.value,mode:selectedMode,quality:selectedQuality})});const d=await r.json();if(!r.ok||!d.ok||!d.job_id)throw new Error(d.error||'Could not start download.');currentJobId=d.job_id;setStatus('Download started.','success');await monitorJob(currentJobId)}catch(e){setStatus(e.message||'Download failed.','error');const m=$('#vlProgressMsg');if(m)m.textContent=e.message||'Download failed.'}finally{b.disabled=false;b.textContent=`⇩ Download ${selectedMode==='audio'?'MP3':'MP4'}`}}
-  async function jobControl(action){if(!currentJobId)return;try{const r=await fetch(`/api/download/${currentJobId}/${action}`,{method:'POST'}),d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||`Could not ${action} download.`);if(action==='pause'){$('#vlPause').hidden=true;$('#vlResume').hidden=false}if(action==='resume'){$('#vlPause').hidden=false;$('#vlResume').hidden=true}if(action==='cancel')setStatus('Download cancelled.')}catch(e){const m=$('#vlProgressMsg');if(m)m.textContent=e.message||'Control action failed.'}}
-  function updateProgress(j){const pct=Math.max(0,Math.min(100,Number(j.percent||0)));const fill=$('#vlFill');if(fill)fill.style.width=`${pct}%`;const p=$('#vlProgressPct');if(p)p.textContent=`${Math.round(pct)}%`;const amount=$('#vlAmount');if(amount)amount.textContent=`${bytes(j.downloaded_bytes)} / ${j.total_bytes?bytes(j.total_bytes):'—'}`;const speed=$('#vlSpeed');if(speed)speed.textContent=j.speed?`${bytes(j.speed)}/s`:'—';const e=$('#vlEta');if(e)e.textContent=eta(j.eta);const t=$('#vlProgressTitle');if(t)t.textContent=j.title||currentVideo?.title||'Downloading...'}
-  async function monitorJob(id){for(;;){await new Promise(r=>setTimeout(r,850));const r=await fetch(`/api/download/${id}/status`),d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'Could not read download status.');const j=d.job||{};updateProgress(j);const m=$('#vlProgressMsg');if(m)m.textContent=j.status==='downloading'?'Downloading...':j.status==='processing'?'Processing video...':j.status==='paused'?'Download paused.':'Preparing download...';if(j.status==='cancelled')break;if(j.status==='error')throw new Error(j.error||'Download failed.');if(j.status==='completed'){updateProgress({...j,percent:100});if(m)m.textContent='Download complete. Preparing file...';const fr=await fetch(`/api/download/${id}/file`);if(!fr.ok)throw new Error('Could not retrieve the downloaded file.');const blob=await fr.blob();if(!blob.size)throw new Error('Downloaded file is empty.');const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;const clean=(currentVideo?.title||'video').replace(/[^\w\s.-]/g,'').trim().slice(0,90)||'video';a.download=`${clean}.${selectedMode==='audio'?'mp3':'mp4'}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),15000);if(m)m.textContent='Download finished. Check your browser downloads.';break}}}
-  fetchBtn?.addEventListener('click',()=>fetchMedia());urlInput?.addEventListener('keydown',e=>{if(e.key==='Enter')fetchMedia()});
-  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;const b=$('#installBtn');if(b){b.hidden=false;b.textContent='Install app ↓'}});$('#installBtn')?.addEventListener('click',async()=>{if(!deferredInstall){setStatus('Use your browser menu and choose Install App / Add to Home Screen.');return}deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null});
-  addStyle();buildWorkspace();$$('.reveal').forEach(el=>el.classList.add('visible'));
+
+  async function fetchMedia() {
+    const url = input.value.trim();
+    if (!url) return setStatus('Paste a public video URL first.', 'error');
+    fetchBtn.disabled = true; setStatus('Reading media information…');
+    try {
+      const r = await fetch('/api/info', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url}) });
+      const d = await r.json();
+      if (!r.ok || !d.ok) throw new Error(d.error || 'Could not read this media.');
+      media = d.video || d;
+      $('#vl-title').textContent = media.title || 'Untitled media';
+      $('#vl-meta').textContent = `${media.platform || 'Media'} · ${media.duration || 'Duration unavailable'} · ${media.views || 'Views unavailable'}`;
+      const thumb = $('#vl-thumb');
+      if (media.thumbnail) { thumb.src = media.thumbnail; thumb.style.display='block'; } else thumb.style.display='none';
+      result.style.display = 'grid'; renderQualities(); setStatus(`${media.platform || 'Media'} found.`, 'ok');
+    } catch (e) { result.style.display='none'; setStatus(e.message || 'Could not read this link.', 'error'); }
+    finally { fetchBtn.disabled=false; }
+  }
+
+  async function download() {
+    if (!media) return;
+    downloadBtn.disabled = true; setStatus('Preparing your download…');
+    try {
+      const r = await fetch('/api/download', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:media.url || input.value, mode, quality}) });
+      const type = r.headers.get('content-type') || '';
+      if (!r.ok || type.includes('application/json')) { const d=await r.json().catch(()=>({})); throw new Error(d.error || 'Download failed.'); }
+      const blob = await r.blob();
+      if (!blob.size) throw new Error('The server returned an empty file.');
+      const cd = r.headers.get('content-disposition') || '';
+      const match = cd.match(/filename="?([^";]+)"?/i);
+      const ext = mode === 'audio' ? 'audio' : 'mp4';
+      const name = match ? match[1] : `${(media.title || 'video').replace(/[^\w\s.-]/g,'').trim() || 'video'}.${ext}`;
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href),15000); setStatus('Download complete. Check your browser downloads.', 'ok');
+    } catch (e) { setStatus(e.message || 'Download failed.', 'error'); }
+    finally { downloadBtn.disabled=false; }
+  }
+
+  document.addEventListener('click', e => { const tab=e.target.closest('.vl-tab'); if(!tab)return; document.querySelectorAll('.vl-tab').forEach(x=>x.classList.remove('active'));tab.classList.add('active');mode=tab.dataset.mode;renderQualities(); });
+  qualitySelect.addEventListener('change', e => quality=e.target.value);
+  fetchBtn.addEventListener('click', fetchMedia); input.addEventListener('keydown', e => { if(e.key==='Enter') fetchMedia(); }); downloadBtn.addEventListener('click', download);
 })();
