@@ -16,7 +16,7 @@ android.archs = arm64-v8a,armeabi-v7a
 android.allow_backup = False
 android.entrypoint = org.kivy.android.PythonActivity
 android.accept_sdk_license = True
-android.skip_update = False
+android.skip_update = True
 
 [buildozer]
 log_level = 2
