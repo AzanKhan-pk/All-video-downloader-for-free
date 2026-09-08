@@ -1,114 +1,912 @@
-(() => {
-  'use strict';
-  const $ = (s, r = document) => r.querySelector(s);
-  let media = null;
-  let mode = 'video';
-  let quality = '720p';
+const $ = (selector) => document.querySelector(selector);
 
-  const style = document.createElement('style');
-  style.textContent = `
-    #downloader { display:none!important }
-    #vidloom-app { max-width:1180px; margin:35px auto 80px; padding:0 18px; font-family:Manrope,system-ui,sans-serif }
-    .vl-card { background:#070d20; border:1px solid #263b73; border-radius:18px; padding:22px; box-shadow:0 18px 55px rgba(0,0,0,.22) }
-    .vl-title { font-size:30px; font-weight:800; margin:0 0 8px; color:#fff }
-    .vl-sub { color:#9da9c8; margin:0 0 22px }
-    .vl-form { display:flex; gap:10px }
-    .vl-form input { flex:1; min-width:0; padding:15px 16px; border-radius:11px; border:1px solid #30477f; background:#050a18; color:#fff; outline:none }
-    .vl-btn { border:0; border-radius:11px; padding:0 22px; background:linear-gradient(100deg,#6424ff,#087fff); color:#fff; font-weight:800; cursor:pointer }
-    .vl-btn:disabled { opacity:.55; cursor:wait }
-    .vl-result { margin-top:18px; display:none; grid-template-columns:1fr 330px; gap:18px }
-    .vl-preview { overflow:hidden; border-radius:13px; border:1px solid #263b73; background:#030714 }
-    .vl-preview img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block }
-    .vl-info { padding:15px }
-    .vl-info h3 { color:#fff; margin:0 0 7px; font-size:19px }
-    .vl-info p { color:#9da9c8; margin:4px 0; font-size:12px }
-    .vl-controls { border:1px solid #263b73; border-radius:13px; padding:17px; background:#060c1d }
-    .vl-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:15px }
-    .vl-tab { padding:11px; border-radius:9px; border:1px solid #2a4077; background:#0a1229; color:#b9c4df; cursor:pointer }
-    .vl-tab.active { background:#5224e9; color:#fff; border-color:#6b56ff }
-    .vl-controls label { display:block; color:#9da9c8; font-size:12px; margin:12px 0 7px }
-    .vl-controls select { width:100%; padding:11px; border-radius:9px; border:1px solid #2a4077; background:#0a1229; color:#fff }
-    .vl-download { width:100%; padding:13px; margin-top:15px }
-    .vl-status { margin-top:14px; min-height:20px; color:#9da9c8; font-size:12px }
-    .vl-status.error { color:#ff9c9c } .vl-status.ok { color:#7ee2b0 }
-    .vl-note { margin-top:12px; color:#7583a5; font-size:11px; line-height:1.5 }
-    @media(max-width:800px){ .vl-result{grid-template-columns:1fr} .vl-form{flex-direction:column}.vl-btn{padding:13px} }
+const urlInput = $("#url");
+const fetchButton = $("#fetchBtn");
+const statusBox = $("#status");
+const resultBox = $("#result");
+
+let selectedMode = "video";
+let selectedQuality = "720p";
+let currentVideo = null;
+
+function setStatus(message, type = "") {
+  statusBox.textContent = message;
+  statusBox.className = `status ${type}`.trim();
+}
+
+function setButtonLoading(button, loading, loadingText, normalText) {
+  button.disabled = loading;
+  button.textContent = loading ? loadingText : normalText;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, (character) => {
+    const entities = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "'": "&#39;",
+      '"': "&quot;"
+    };
+
+    return entities[character];
+  });
+}
+
+function updateQualityLabel() {
+  const qualityLabel = $("#qualityLabel");
+
+  if (selectedMode === "audio") {
+    qualityLabel.textContent = "192 kbps high quality";
+    return;
+  }
+
+  qualityLabel.textContent =
+    selectedQuality === "720p"
+      ? "720p recommended"
+      : selectedQuality;
+}
+
+function renderVideoResult(video) {
+  const thumbnail = video.thumbnail
+    ? `<img src="${escapeHtml(video.thumbnail)}" alt="Video thumbnail">`
+    : `<div class="result-placeholder">AVD</div>`;
+
+  resultBox.innerHTML = `
+    ${thumbnail}
+    <div>
+      <h3>${escapeHtml(video.title)}</h3>
+      <p>
+        ${escapeHtml(video.creator)}
+        · ${escapeHtml(video.duration)}
+        · ${escapeHtml(video.views)} views
+      </p>
+      <p>${escapeHtml(video.platform)}</p>
+      <button id="downloadBtn" type="button">
+        Download ${selectedMode === "audio" ? "MP3" : "MP4"} ↗
+      </button>
+    </div>
   `;
-  document.head.appendChild(style);
 
-  const app = document.createElement('section');
-  app.id = 'vidloom-app';
-  app.innerHTML = `
-    <div class="vl-card">
-      <h2 class="vl-title">VidLoom Video Downloader</h2>
-      <p class="vl-sub">Download public media from supported websites. No login or DRM bypass.</p>
-      <div class="vl-form"><input id="vl-url" type="url" placeholder="Paste a public video URL…" autocomplete="off"><button id="vl-fetch" class="vl-btn">Fetch media</button></div>
-      <div id="vl-status" class="vl-status"></div>
-      <div id="vl-result" class="vl-result">
-        <div class="vl-preview"><img id="vl-thumb" alt="Media thumbnail"><div class="vl-info"><h3 id="vl-title"></h3><p id="vl-meta"></p></div></div>
-        <div class="vl-controls">
-          <div class="vl-tabs"><button class="vl-tab active" data-mode="video">Video</button><button class="vl-tab" data-mode="audio">Audio</button></div>
-          <label for="vl-quality">Quality</label><select id="vl-quality"></select>
-          <button id="vl-download" class="vl-btn vl-download">Download</button>
-          <div class="vl-note">Vercel's free serverless environment cannot keep a background download running. This version downloads in the same request and avoids server-side FFmpeg merging.</div>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(app);
+  resultBox.hidden = false;
 
-  const input = $('#vl-url'), fetchBtn = $('#vl-fetch'), status = $('#vl-status'), result = $('#vl-result');
-  const qualitySelect = $('#vl-quality'), downloadBtn = $('#vl-download');
+  const downloadButton = $("#downloadBtn");
 
-  function setStatus(text, type='') { status.textContent = text; status.className = `vl-status ${type}`; }
-  function esc(s) { return String(s || '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  if (downloadButton) {
+    downloadButton.addEventListener("click", downloadMedia);
+  }
+}
 
-  function renderQualities() {
-    const qs = Array.isArray(media?.available_qualities) ? media.available_qualities : [];
-    qualitySelect.innerHTML = '';
-    const values = qs.length ? qs : ['360p','480p','720p','1080p'];
-    values.forEach(q => { const o = document.createElement('option'); o.value=q; o.textContent=q; qualitySelect.appendChild(o); });
-    quality = values.includes('720p') ? '720p' : values[0]; qualitySelect.value = quality;
-    qualitySelect.disabled = mode === 'audio';
+document.querySelectorAll(".mode").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.querySelectorAll(".mode").forEach((item) => {
+      item.classList.remove("active");
+    });
+
+    button.classList.add("active");
+    selectedMode = button.dataset.mode;
+    updateQualityLabel();
+
+    if (currentVideo && !resultBox.hidden) {
+      renderVideoResult(currentVideo);
+    }
+  });
+});
+
+document.querySelectorAll(".quality-grid button").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.querySelectorAll(".quality-grid button").forEach((item) => {
+      item.classList.remove("selected");
+    });
+
+    button.classList.add("selected");
+    selectedQuality = button.dataset.quality;
+    updateQualityLabel();
+  });
+});
+
+fetchButton.addEventListener("click", async () => {
+  const url = urlInput.value.trim();
+
+  if (!url) {
+    setStatus("Paste a public video URL first.", "error");
+    urlInput.focus();
+    return;
   }
 
-  async function fetchMedia() {
-    const url = input.value.trim();
-    if (!url) return setStatus('Paste a public video URL first.', 'error');
-    fetchBtn.disabled = true; setStatus('Reading media information…');
-    try {
-      const r = await fetch('/api/info', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url}) });
-      const d = await r.json();
-      if (!r.ok || !d.ok) throw new Error(d.error || 'Could not read this media.');
-      media = d.video || d;
-      $('#vl-title').textContent = media.title || 'Untitled media';
-      $('#vl-meta').textContent = `${media.platform || 'Media'} · ${media.duration || 'Duration unavailable'} · ${media.views || 'Views unavailable'}`;
-      const thumb = $('#vl-thumb');
-      if (media.thumbnail) { thumb.src = media.thumbnail; thumb.style.display='block'; } else thumb.style.display='none';
-      result.style.display = 'grid'; renderQualities(); setStatus(`${media.platform || 'Media'} found.`, 'ok');
-    } catch (e) { result.style.display='none'; setStatus(e.message || 'Could not read this link.', 'error'); }
-    finally { fetchBtn.disabled=false; }
+  setButtonLoading(
+    fetchButton,
+    true,
+    "Reading...",
+    "Fetch media ↗"
+  );
+
+  setStatus("Reading public media details...");
+  resultBox.hidden = true;
+  currentVideo = null;
+
+  try {
+    const response = await fetch("/api/info", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ url })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(
+        data.error || "Could not read this link."
+      );
+    }
+
+    currentVideo = data.video;
+    renderVideoResult(currentVideo);
+
+    setStatus(
+      `${currentVideo.platform} media found.`,
+      "success"
+    );
+  } catch (error) {
+    resultBox.hidden = true;
+    setStatus(
+      error.message || "Something went wrong.",
+      "error"
+    );
+  } finally {
+    setButtonLoading(
+      fetchButton,
+      false,
+      "Reading...",
+      "Fetch media ↗"
+    );
+  }
+});
+
+async function downloadMedia() {
+  if (!currentVideo) {
+    setStatus("Fetch the media details before downloading.", "error");
+    return;
   }
 
-  async function download() {
-    if (!media) return;
-    downloadBtn.disabled = true; setStatus('Preparing your download…');
-    try {
-      const r = await fetch('/api/download', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:media.url || input.value, mode, quality}) });
-      const type = r.headers.get('content-type') || '';
-      if (!r.ok || type.includes('application/json')) { const d=await r.json().catch(()=>({})); throw new Error(d.error || 'Download failed.'); }
-      const blob = await r.blob();
-      if (!blob.size) throw new Error('The server returned an empty file.');
-      const cd = r.headers.get('content-disposition') || '';
-      const match = cd.match(/filename="?([^";]+)"?/i);
-      const ext = mode === 'audio' ? 'audio' : 'mp4';
-      const name = match ? match[1] : `${(media.title || 'video').replace(/[^\w\s.-]/g,'').trim() || 'video'}.${ext}`;
-      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(a.href),15000); setStatus('Download complete. Check your browser downloads.', 'ok');
-    } catch (e) { setStatus(e.message || 'Download failed.', 'error'); }
-    finally { downloadBtn.disabled=false; }
+  const downloadButton = $("#downloadBtn");
+
+  setButtonLoading(
+    downloadButton,
+    true,
+    "Starting...",
+    `Download ${selectedMode === "audio" ? "MP3" : "MP4"} ↗`
+  );
+
+  try {
+    const response = await fetch("/api/download", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        url: currentVideo.url,
+        mode: selectedMode,
+        quality: selectedQuality
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.ok || !data.job_id) {
+      throw new Error(
+        data.error || "Could not start the download."
+      );
+    }
+
+    const jobId = data.job_id;
+
+    createDownloadPanel(downloadButton);
+
+    setStatus("Download started.", "success");
+
+    await monitorDownload(jobId);
+
+  } catch (error) {
+    console.error("Download error:", error);
+
+    setStatus(
+      error.message || "Download failed.",
+      "error"
+    );
+
+    removeDownloadPanel();
+  } finally {
+    setButtonLoading(
+      downloadButton,
+      false,
+      "Starting...",
+      `Download ${selectedMode === "audio" ? "MP3" : "MP4"} ↗`
+    );
+  }
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) {
+    return "0 B";
   }
 
-  document.addEventListener('click', e => { const tab=e.target.closest('.vl-tab'); if(!tab)return; document.querySelectorAll('.vl-tab').forEach(x=>x.classList.remove('active'));tab.classList.add('active');mode=tab.dataset.mode;renderQualities(); });
-  qualitySelect.addEventListener('change', e => quality=e.target.value);
-  fetchBtn.addEventListener('click', fetchMedia); input.addEventListener('keydown', e => { if(e.key==='Enter') fetchMedia(); }); downloadBtn.addEventListener('click', download);
-})();
+  const units = [
+    "B",
+    "KB",
+    "MB",
+    "GB",
+    "TB"
+  ];
+
+  const index = Math.floor(
+    Math.log(bytes) / Math.log(1024)
+  );
+
+  const safeIndex = Math.min(
+    index,
+    units.length - 1
+  );
+
+  const value =
+    bytes / Math.pow(1024, safeIndex);
+
+  if (safeIndex === 0) {
+    return `${Math.round(value)} ${units[safeIndex]}`;
+  }
+
+  return `${value.toFixed(2)} ${units[safeIndex]}`;
+}
+function createDownloadPanel(downloadButton) {
+  removeDownloadPanel();
+
+  const panel = document.createElement("div");
+
+  panel.id = "downloadProgressPanel";
+
+  panel.innerHTML = `
+    <div class="download-progress-header">
+      <strong id="downloadProgressTitle">
+        Downloading...
+      </strong>
+
+      <span id="downloadProgressPercent">
+        0%
+      </span>
+    </div>
+
+    <div class="download-progress-bar">
+      <div
+        id="downloadProgressFill"
+        class="download-progress-fill"
+        style="width: 0%"
+      ></div>
+    </div>
+
+    <div class="download-progress-info">
+      <span id="downloadProgressSize">
+        0 B / 0 B
+      </span>
+
+      <span id="downloadProgressSpeed">
+        0 B/s
+      </span>
+    </div>
+
+    <div class="download-progress-actions">
+
+      <button
+        id="pauseDownloadBtn"
+        type="button"
+      >
+        ⏸ Pause
+      </button>
+
+      <button
+        id="resumeDownloadBtn"
+        type="button"
+        hidden
+      >
+        ▶ Resume
+      </button>
+
+      <button
+        id="cancelDownloadBtn"
+        type="button"
+      >
+        ✕ Cancel
+      </button>
+
+    </div>
+
+    <div
+      id="downloadProgressMessage"
+      class="download-progress-message"
+    >
+      Preparing download...
+    </div>
+  `;
+
+  downloadButton.replaceWith(panel);
+
+  window.currentDownloadJobId = null;
+
+  panel.querySelector("#pauseDownloadBtn")
+    .addEventListener("click", async () => {
+      const jobId = window.currentDownloadJobId;
+
+      if (!jobId) return;
+
+      try {
+        const response = await fetch(
+          `/api/download/${jobId}/pause`,
+          {
+            method: "POST"
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error(
+            data.error || "Could not pause download."
+          );
+        }
+
+        showPausedControls();
+
+      } catch (error) {
+        setDownloadProgressMessage(
+          error.message,
+          true
+        );
+      }
+    });
+
+  panel.querySelector("#resumeDownloadBtn")
+    .addEventListener("click", async () => {
+      const jobId = window.currentDownloadJobId;
+
+      if (!jobId) return;
+
+      try {
+        const response = await fetch(
+          `/api/download/${jobId}/resume`,
+          {
+            method: "POST"
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error(
+            data.error || "Could not resume download."
+          );
+        }
+
+        showRunningControls();
+
+      } catch (error) {
+        setDownloadProgressMessage(
+          error.message,
+          true
+        );
+      }
+    });
+
+  panel.querySelector("#cancelDownloadBtn")
+    .addEventListener("click", async () => {
+      const jobId = window.currentDownloadJobId;
+
+      if (!jobId) return;
+
+      try {
+        const response = await fetch(
+          `/api/download/${jobId}/cancel`,
+          {
+            method: "POST"
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error(
+            data.error || "Could not cancel download."
+          );
+        }
+
+        setDownloadProgressMessage(
+          "Download cancelled.",
+          true
+        );
+
+        showPausedControls();
+
+        const pauseButton =
+          $("#pauseDownloadBtn");
+
+        const resumeButton =
+          $("#resumeDownloadBtn");
+
+        const cancelButton =
+          $("#cancelDownloadBtn");
+
+        if (pauseButton) pauseButton.disabled = true;
+        if (resumeButton) resumeButton.disabled = true;
+        if (cancelButton) cancelButton.disabled = true;
+
+      } catch (error) {
+        setDownloadProgressMessage(
+          error.message,
+          true
+        );
+      }
+    });
+}
+
+
+async function monitorDownload(jobId) {
+  window.currentDownloadJobId = jobId;
+
+  while (true) {
+    await new Promise(resolve =>
+      setTimeout(resolve, 1000)
+    );
+
+    const response = await fetch(
+      `/api/download/${jobId}/status`
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(
+        data.error || "Could not read download status."
+      );
+    }
+
+    const job = data.job;
+
+    const percent =
+      Number(job.percent || 0);
+
+    const downloaded =
+      formatBytes(
+        job.downloaded_bytes || 0
+      );
+
+    const total =
+      formatBytes(
+        job.total_bytes || 0
+      );
+
+    const speed =
+      formatBytes(
+        job.speed || 0
+      );
+
+    updateDownloadProgress(
+      percent,
+      downloaded,
+      total,
+      speed
+    );
+
+    if (
+      job.status === "starting" ||
+      job.status === "preparing"
+    ) {
+      setDownloadProgressMessage(
+        "Preparing download..."
+      );
+
+      showRunningControls();
+    }
+
+    if (job.status === "downloading") {
+      setDownloadProgressMessage(
+        "Downloading..."
+      );
+
+      showRunningControls();
+    }
+
+    if (job.status === "paused") {
+      setDownloadProgressMessage(
+        "Download paused."
+      );
+
+      showPausedControls();
+    }
+
+    if (job.status === "network_error") {
+
+      setDownloadProgressMessage(
+        "⚠ Network issue detected. Waiting for connection...",
+        true
+      );
+
+      showPausedControls();
+
+      /*
+       * Try to resume automatically after 5 seconds.
+       */
+      await new Promise(resolve =>
+        setTimeout(resolve, 5000)
+      );
+
+      try {
+        const resumeResponse = await fetch(
+          `/api/download/${jobId}/resume`,
+          {
+            method: "POST"
+          }
+        );
+
+        const resumeData =
+          await resumeResponse.json();
+
+        if (
+          resumeResponse.ok &&
+          resumeData.ok
+        ) {
+          showRunningControls();
+
+          setDownloadProgressMessage(
+            "Connection restored. Resuming..."
+          );
+        }
+
+      } catch (error) {
+        console.log(
+          "Automatic resume waiting:",
+          error
+        );
+      }
+
+      continue;
+    }
+
+    if (job.status === "processing") {
+      setDownloadProgressMessage(
+        "Processing video..."
+      );
+
+      showRunningControls();
+    }
+
+    if (job.status === "cancelled") {
+
+      setDownloadProgressMessage(
+        "Download cancelled.",
+        true
+      );
+
+      disableDownloadControls();
+
+      break;
+    }
+
+    if (job.status === "error") {
+      throw new Error(
+        job.error || "Download failed."
+      );
+    }
+
+    if (job.status === "completed") {
+
+      updateDownloadProgress(
+        100,
+        formatBytes(
+          job.downloaded_bytes || 0
+        ),
+        formatBytes(
+          job.total_bytes || 0
+        ),
+        "0 B/s"
+      );
+
+      setDownloadProgressMessage(
+        "Download complete. Preparing file..."
+      );
+
+      const fileResponse = await fetch(
+        `/api/download/${jobId}/file`
+      );
+
+      if (!fileResponse.ok) {
+        let errorMessage =
+          "Could not retrieve the downloaded file.";
+
+        try {
+          const errorData =
+            await fileResponse.json();
+
+          errorMessage =
+            errorData.error ||
+            errorMessage;
+
+        } catch (_) {}
+
+        throw new Error(errorMessage);
+      }
+
+      const fileBlob =
+        await fileResponse.blob();
+
+      if (!fileBlob.size) {
+        throw new Error(
+          "Downloaded file is empty."
+        );
+      }
+
+      const temporaryUrl =
+        URL.createObjectURL(fileBlob);
+
+      const downloadLink =
+        document.createElement("a");
+
+      const safeFileName =
+        (currentVideo.title || "video")
+          .replace(/[^\w\s.-]/g, "")
+          .trim()
+          .slice(0, 90) || "video";
+
+      const extension =
+        selectedMode === "audio"
+          ? "mp3"
+          : "mp4";
+
+      downloadLink.href =
+        temporaryUrl;
+
+      downloadLink.download =
+        `${safeFileName}.${extension}`;
+
+      document.body.appendChild(
+        downloadLink
+      );
+
+      downloadLink.click();
+
+      downloadLink.remove();
+
+      setTimeout(() => {
+        URL.revokeObjectURL(
+          temporaryUrl
+        );
+      }, 5000);
+
+      setDownloadProgressMessage(
+        "✓ Download completed.",
+        false
+      );
+
+      disableDownloadControls();
+
+      break;
+    }
+  }
+
+  window.currentDownloadJobId = null;
+}
+
+
+function updateDownloadProgress(
+  percent,
+  downloaded,
+  total,
+  speed
+) {
+  const percentElement =
+    $("#downloadProgressPercent");
+
+  const fillElement =
+    $("#downloadProgressFill");
+
+  const sizeElement =
+    $("#downloadProgressSize");
+
+  const speedElement =
+    $("#downloadProgressSpeed");
+
+  if (percentElement) {
+    percentElement.textContent =
+      `${percent.toFixed(1)}%`;
+  }
+
+  if (fillElement) {
+    fillElement.style.width =
+      `${Math.min(percent, 100)}%`;
+  }
+
+  if (sizeElement) {
+    sizeElement.textContent =
+      `${downloaded} / ${total}`;
+  }
+
+  if (speedElement) {
+    speedElement.textContent =
+      `${speed}/s`;
+  }
+}
+
+
+function setDownloadProgressMessage(
+  message,
+  error = false
+) {
+  const element =
+    $("#downloadProgressMessage");
+
+  if (!element) return;
+
+  element.textContent = message;
+
+  element.classList.toggle(
+    "error",
+    error
+  );
+}
+
+
+function showRunningControls() {
+  const pauseButton =
+    $("#pauseDownloadBtn");
+
+  const resumeButton =
+    $("#resumeDownloadBtn");
+
+  if (pauseButton) {
+    pauseButton.hidden = false;
+    pauseButton.disabled = false;
+  }
+
+  if (resumeButton) {
+    resumeButton.hidden = true;
+    resumeButton.disabled = false;
+  }
+}
+
+
+function showPausedControls() {
+  const pauseButton =
+    $("#pauseDownloadBtn");
+
+  const resumeButton =
+    $("#resumeDownloadBtn");
+
+  if (pauseButton) {
+    pauseButton.hidden = true;
+  }
+
+  if (resumeButton) {
+    resumeButton.hidden = false;
+    resumeButton.disabled = false;
+  }
+}
+
+
+function disableDownloadControls() {
+  const pauseButton =
+    $("#pauseDownloadBtn");
+
+  const resumeButton =
+    $("#resumeDownloadBtn");
+
+  const cancelButton =
+    $("#cancelDownloadBtn");
+
+  if (pauseButton) {
+    pauseButton.disabled = true;
+  }
+
+  if (resumeButton) {
+    resumeButton.disabled = true;
+  }
+
+  if (cancelButton) {
+    cancelButton.disabled = true;
+  }
+}
+
+
+function removeDownloadPanel() {
+  const panel =
+    $("#downloadProgressPanel");
+
+  if (panel) {
+    panel.remove();
+  }
+
+  window.currentDownloadJobId = null;
+}
+
+$("#commentForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const form = event.currentTarget;
+  const submitButton = form.querySelector("button");
+  const commentStatus = $("#commentStatus");
+
+  const name = $("#name").value.trim();
+  const comment = $("#comment").value.trim();
+
+  if (!name || !comment) {
+    commentStatus.textContent = "Please complete both fields.";
+    commentStatus.className = "status error";
+    return;
+  }
+
+  submitButton.disabled = true;
+  submitButton.textContent = "Saving...";
+
+  commentStatus.textContent = "Saving your note...";
+  commentStatus.className = "status";
+
+  try {
+    const response = await fetch("/api/comments", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name,
+        comment
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(
+        data.error || "Could not save your feedback."
+      );
+    }
+
+    commentStatus.textContent =
+      data.message || "Thanks, your feedback is saved.";
+    commentStatus.className = "status success";
+
+    form.reset();
+  } catch (error) {
+    commentStatus.textContent =
+      error.message || "Could not save your feedback.";
+    commentStatus.className = "status error";
+  } finally {
+    submitButton.disabled = false;
+    submitButton.innerHTML = "Send feedback <span>↗</span>";
+  }
+});
+
+const revealObserver = new IntersectionObserver(
+  (entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add("visible");
+        revealObserver.unobserve(entry.target);
+      }
+    });
+  },
+  {
+    threshold: 0.12
+  }
+);
+
+document.querySelectorAll(".reveal").forEach((element, index) => {
+  element.style.transitionDelay =
+    `${Math.min(index * 45, 260)}ms`;
+
+  revealObserver.observe(element);
+});
+
+urlInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    fetchButton.click();
+  }
+});
