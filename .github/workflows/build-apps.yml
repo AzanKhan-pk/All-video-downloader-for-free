@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'desktop/**'
+      - 'static/logo.png'
       - 'android/**'
       - 'docs/**'
       - '.github/workflows/build-apps.yml'
@@ -29,7 +30,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
       - name: Build executable
-        run: pyinstaller --noconfirm --clean --onefile --windowed --name VidLoom app.py
+        run: pyinstaller --noconfirm --clean --onefile --windowed --name VidLoom --add-data "../static/logo.png;static" app.py
       - name: Verify Windows build
         run: |
           if (!(Test-Path dist\VidLoom.exe)) { throw 'VidLoom.exe was not created' }
