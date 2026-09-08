@@ -47,12 +47,36 @@ jobs:
           sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip python3-venv build-essential libffi-dev libssl-dev autoconf automake libtool pkg-config zlib1g-dev
           python -m pip install --upgrade pip
           python -m pip install --upgrade buildozer cython
+      - name: Preinstall Android SDK tools and accept licenses
+        working-directory: android
+        env:
+          ANDROID_HOME: /home/runner/.buildozer/android/platform/android-sdk
+          ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
+        run: |
+          set -euxo pipefail
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          # Buildozer downloads the SDK command-line tools into this location.
+          # If the SDK already exists, reuse it; otherwise let Buildozer bootstrap it first.
+          if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            rm -rf "$ANDROID_HOME/cmdline-tools/latest"
+            mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
+            curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip -o /tmp/cmdline-tools.zip
+            unzip -q /tmp/cmdline-tools.zip -d /tmp/android-cmdline
+            cp -a /tmp/android-cmdline/cmdline-tools/. "$ANDROID_HOME/cmdline-tools/latest/"
+          fi
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
+            "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          test -x "$ANDROID_HOME/build-tools/35.0.0/aidl"
       - name: Build APK with Buildozer
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+          ANDROID_HOME: /home/runner/.buildozer/android/platform/android-sdk
+          ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
         run: |
-          set -e
-          export PATH="$JAVA_HOME/bin:$PATH"
+          set -euxo pipefail
+          export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
           buildozer -v android debug
       - name: Upload APK
         uses: actions/upload-artifact@v4
