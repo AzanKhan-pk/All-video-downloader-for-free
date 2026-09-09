@@ -1,21 +1,13 @@
 {
-  "name": "VidLoom Video Downloader",
-  "short_name": "VidLoom",
-  "description": "Download supported videos and audio with VidLoom.",
+  "name": "All Video Downloader Without Watermark",
+  "short_name": "All Video Downloader",
+  "description": "Real public-media downloads with source-verified quality.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#111827",
-  "theme_color": "#6366f1",
+  "background_color": "#08090d",
+  "theme_color": "#8b5cf6",
   "icons": [
-    {
-      "src": "/static/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/static/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
+    {"src":"/static/icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"/static/icon-512.png","sizes":"512x512","type":"image/png"}
   ]
 }
